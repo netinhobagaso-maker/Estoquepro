@@ -11,11 +11,12 @@
     "react": "latest",
     "react-dom": "latest",
     "@supabase/supabase-js": "^2.39.0",
-    "stripe": "^14.14.0"
+    "stripe": "^14.14.0",
+    "@tailwindcss/postcss": "latest",
+    "tailwindcss": "latest"
   },
   "devDependencies": {
     "autoprefixer": "latest",
-    "postcss": "latest",
-    "tailwindcss": "latest"
+    "postcss": "latest"
   }
 }
