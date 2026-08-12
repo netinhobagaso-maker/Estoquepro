@@ -6,6 +6,12 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 export async function POST(request) {
   try {
     const { userId, email } = await request.json();
+    const priceId = process.env.STRIPE_PRICE_ID;
+
+    // Trava para evitar o erro do print que você mandou
+    if (!priceId) {
+      return NextResponse.json({ error: 'Falta a variável STRIPE_PRICE_ID lá na Vercel!' }, { status: 400 });
+    }
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card', 'boleto'],
@@ -16,21 +22,19 @@ export async function POST(request) {
           price_data: {
             currency: 'brl',
             product_data: { name: 'Acesso Mês 1 (Promocional)' },
-            unit_amount: 2000, // R$ 20,00
+            unit_amount: 2000,
           },
           quantity: 1,
         },
         {
-          price: process.env.STRIPE_PRICE_ID, // O preço de R$ 49,99 configurado no painel do Stripe
+          price: priceId,
           quantity: 1,
         },
       ],
       subscription_data: {
-        trial_period_days: 90, // Cobre os meses 2 e 3 grátis
+        trial_period_days: 90,
       },
-      metadata: {
-        userId: userId,
-      },
+      metadata: { userId: userId },
       success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/?pagamento=sucesso`,
       cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/?pagamento=cancelado`,
     });
