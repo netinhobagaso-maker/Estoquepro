@@ -1,0 +1,16 @@
+{
+  "name": "Meu Negócio App",
+  "short_name": "GestãoApp",
+  "description": "Sistema de Controle de Estoque e Fiados",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3028/3028795.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
