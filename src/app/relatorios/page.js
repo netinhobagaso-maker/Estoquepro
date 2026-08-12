@@ -9,38 +9,41 @@ export default function Relatorios() {
   const [resumo, setResumo] = useState({ faturamento: 0, lucro: 0, itensVendidos: 0 });
 
   useEffect(() => {
-    const buscarRelatorios = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        // Busca todas as vendas do usuário
-        const { data } = await supabase
-          .from('vendas')
-          .select(`
-            *,
-            produtos (nome)
-          `)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-
-        if (data) {
-          setVendas(data);
-          
-          // Calcula os totais
-          const totalFaturamento = data.reduce((acc, v) => acc + v.valor_total, 0);
-          const totalLucro = data.reduce((acc, v) => acc + v.lucro_realizado, 0);
-          const totalItens = data.reduce((acc, v) => acc + v.quantidade_vendida, 0);
-
-          setResumo({
-            faturamento: totalFaturamento,
-            lucro: totalLucro,
-            itensVendidos: totalItens
-          });
-        }
-      }
-      setLoading(false);
-    };
     buscarRelatorios();
   }, []);
+
+  const buscarRelatorios = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data, error } = await supabase
+        .from('vendas')
+        .select(`
+          id,
+          quantidade_vendida,
+          valor_total,
+          lucro_realizado,
+          created_at,
+          produtos (nome)
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        setVendas(data);
+
+        const totalFaturamento = data.reduce((acc, v) => acc + (v.valor_total || 0), 0);
+        const totalLucro = data.reduce((acc, v) => acc + (v.lucro_realizado || 0), 0);
+        const totalItens = data.reduce((acc, v) => acc + (v.quantidade_vendida || 0), 0);
+
+        setResumo({
+          faturamento: totalFaturamento,
+          lucro: totalLucro,
+          itensVendidos: totalItens
+        });
+      }
+    }
+    setLoading(false);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -50,11 +53,9 @@ export default function Relatorios() {
       </div>
       
       <div className="p-6 -mt-4 space-y-6">
-        
-        {/* Cards de Resumo */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-5 rounded-2xl shadow-xl border border-gray-100 col-span-2">
-            <p className="text-sm text-gray-500 font-bold uppercase">Faturamento Total</p>
+            <p className="text-xs text-gray-500 font-bold uppercase">Faturamento Total</p>
             <h2 className="text-3xl font-black text-emerald-500 mt-1">R$ {resumo.faturamento.toFixed(2)}</h2>
           </div>
           
@@ -69,25 +70,26 @@ export default function Relatorios() {
           </div>
         </div>
 
-        {/* Histórico de Vendas */}
         <div>
           <h3 className="font-bold text-gray-800 mb-4 ml-1">Últimas Vendas</h3>
           {loading ? (
              <p className="text-center text-gray-500 text-sm">Carregando dados...</p>
           ) : vendas.length === 0 ? (
-            <p className="text-center text-gray-500 text-sm bg-white p-4 rounded-xl border">Nenhuma venda registrada ainda.</p>
+            <div className="text-center bg-white p-6 rounded-2xl border border-gray-200">
+              <p className="text-gray-500 text-sm">Nenhuma venda registrada ainda.</p>
+            </div>
           ) : (
             <div className="space-y-3">
               {vendas.map(venda => (
                 <div key={venda.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
                   <div>
-                    <p className="font-bold text-gray-800">{venda.produtos?.nome || 'Produto Excluído'}</p>
+                    <p className="font-bold text-gray-800">{venda.produtos?.nome || 'Produto'}</p>
                     <p className="text-xs text-gray-400">
                       {new Date(venda.created_at).toLocaleDateString('pt-BR')} às {new Date(venda.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-black text-emerald-500">R$ {venda.valor_total.toFixed(2)}</p>
+                    <p className="font-black text-emerald-500">R$ {(venda.valor_total || 0).toFixed(2)}</p>
                     <p className="text-xs text-gray-500">{venda.quantidade_vendida}x unid.</p>
                   </div>
                 </div>
@@ -95,7 +97,6 @@ export default function Relatorios() {
             </div>
           )}
         </div>
-
       </div>
       <BottomNav />
     </div>
