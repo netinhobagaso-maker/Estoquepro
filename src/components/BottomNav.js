@@ -1,69 +1,38 @@
 'use client';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { usePathname } from 'next/navigation';
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const router = useRouter();
-  const [autorizado, setAutorizado] = useState(true);
-
-  // COLOQUE SEU E-MAIL DE TESTE AQUI PARA LIBERAR ACESSO ILIMITADO
-  const EMAIL_TESTE_LIBERADO = 'raidias0007@gmail.com'; 
-
-  useEffect(() => {
-    const verificarAcesso = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      // Se não tiver usuário, manda pro login
-      if (!user) return;
-
-      // Se for o e-mail do dono/teste, libera 100% o acesso!
-      if (user.email === EMAIL_TESTE_LIBERADO) {
-        setAutorizado(true);
-        return;
-      }
-
-      // Para novos clientes: verifica no Supabase se ele efetuou o pagamento dos R$ 20
-      const { data: perfil } = await supabase
-        .from('perfis')
-        .select('pago')
-        .eq('id', user.id)
-        .single();
-
-      if (!perfil || !perfil.pago) {
-        setAutorizado(false);
-        // Se tentar acessar outra tela sem pagar, envia direto para a página de vendas
-        if (pathname !== '/planos') {
-          router.push('/planos');
-        }
-      }
-    };
-
-    verificarAcesso();
-  }, [pathname, router]);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3 flex justify-around items-center z-50">
-      <Link href="/" className={`flex flex-col items-center ${pathname === '/' ? 'text-emerald-500 font-bold' : 'text-gray-400'}`}>
+    <div className="fixed bottom-0 w-full bg-white border-t border-gray-200 flex justify-around items-center h-16 pb-safe z-50">
+      <Link href="/inicio" className={`flex flex-col items-center ${pathname === '/inicio' || pathname === '/' ? 'text-emerald-500' : 'text-gray-400'}`}>
         <span className="text-xl">🏠</span>
-        <span className="text-xs mt-1">Início</span>
+        <span className="text-[10px] mt-1 font-medium">Início</span>
       </Link>
-
-      <Link href="/produtos/novo" className={`flex flex-col items-center ${pathname === '/produtos/novo' ? 'text-emerald-500 font-bold' : 'text-gray-400'}`}>
+      
+      <Link href="/produtos/novo" className={`flex flex-col items-center ${pathname === '/produtos/novo' ? 'text-emerald-500' : 'text-gray-400'}`}>
         <span className="text-xl">📦</span>
-        <span className="text-xs mt-1">Novo Produto</span>
+        <span className="text-[10px] mt-1 font-medium">Novo Produto</span>
       </Link>
 
-      <Link href="/planos" className={`flex flex-col items-center ${pathname === '/planos' ? 'text-emerald-500 font-bold' : 'text-gray-400'}`}>
-        <span className="text-xl">⭐</span>
-        <span className="text-xs mt-1">Plano Pro</span>
-      </Link>
+      {/* BOTÃO FLUTUANTE DE VENDER MANTIDO INTACTO */}
+      <div className="relative -top-5">
+        <Link href="/vender" className="bg-emerald-500 w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-emerald-200 text-2xl active:scale-95 transition-transform border-4 border-white">
+          💰
+        </Link>
+      </div>
 
-      <Link href="/vender" className="flex flex-col items-center bg-emerald-500 text-white p-3 rounded-full shadow-lg -mt-6">
-        <span className="text-2xl">💰</span>
+      <Link href="/fiados" className={`flex flex-col items-center ${pathname === '/fiados' ? 'text-orange-500' : 'text-gray-400'}`}>
+        <span className="text-xl">📝</span>
+        <span className="text-[10px] mt-1 font-medium">Fiados</span>
       </Link>
-    </nav>
+      
+      <Link href="/relatorios" className={`flex flex-col items-center ${pathname === '/relatorios' ? 'text-emerald-500' : 'text-gray-400'}`}>
+        <span className="text-xl">📊</span>
+        <span className="text-[10px] mt-1 font-medium">Estatísticas</span>
+      </Link>
+    </div>
   );
 }
