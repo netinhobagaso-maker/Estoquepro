@@ -28,7 +28,7 @@ export default function AuthGuard({ children }) {
 
     if (usuarioAtual) {
       // COLOCAR SEU EMAIL AQUI PARA VOCÊ ACESSAR TUDO SEM PAGAR
-      if (usuarioAtual.email === 'coloque_seu_email_aqui@gmail.com') {
+      if (usuarioAtual.email === 'raidias0007@gmail.com') {
         setTemAssinatura(true);
       } else {
         const { data: sub } = await supabase.from('assinaturas').select('status').eq('user_id', usuarioAtual.id).single();
