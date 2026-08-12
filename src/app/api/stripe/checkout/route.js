@@ -8,31 +8,25 @@ export async function POST(request) {
     const { userId, email } = await request.json();
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card', 'pix', 'boleto'],
+      payment_method_types: ['card', 'boleto'],
       mode: 'subscription',
       customer_email: email,
       line_items: [
         {
-          // Esta é a cobrança avulsa do PRIMEIRO MÊS (R$ 20,00)
           price_data: {
             currency: 'brl',
-            product_data: {
-              name: 'Acesso Mês 1 (Promocional)',
-            },
-            unit_amount: 2000, // R$ 20,00 em centavos
+            product_data: { name: 'Acesso Mês 1 (Promocional)' },
+            unit_amount: 2000, // R$ 20,00
           },
           quantity: 1,
         },
         {
-          // Este é o plano recorrente configurado no seu .env
-          price: process.env.STRIPE_PRICE_ID, // O preço de R$ 49,99 que você criou no painel do Stripe
+          price: process.env.STRIPE_PRICE_ID, // O preço de R$ 49,99 configurado no painel do Stripe
           quantity: 1,
         },
       ],
       subscription_data: {
-        // Dá 90 dias de carência no plano recorrente (Cobre o mês 1 pago avulso + os meses 2 e 3 grátis)
-        // O valor de R$ 49,99 só será cobrado no 4º mês.
-        trial_period_days: 90, 
+        trial_period_days: 90, // Cobre os meses 2 e 3 grátis
       },
       metadata: {
         userId: userId,
