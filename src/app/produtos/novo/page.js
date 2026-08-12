@@ -1,116 +1,145 @@
 'use client';
 import { useState } from 'react';
 import { supabase } from '../../../lib/supabase';
+import { useRouter } from 'next/navigation';
 import BottomNav from '../../../components/BottomNav';
 
 export default function NovoProduto() {
+  const router = useRouter();
   const [nome, setNome] = useState('');
-  const [tipoMedida, setTipoMedida] = useState('caixa');
-  const [qtdCaixas, setQtdCaixas] = useState('');
-  const [itensPorCaixa, setItensPorCaixa] = useState('');
-  const [custoPacote, setCustoPacote] = useState('');
+  const [custoAquisicao, setCustoAquisicao] = useState('');
   const [precoVenda, setPrecoVenda] = useState('');
-  
+  const [quantidade, setQuantidade] = useState('');
   const [loading, setLoading] = useState(false);
-  const [mensagem, setMensagem] = useState('');
 
-  const totalUnidades = (parseFloat(qtdCaixas) || 0) * (tipoMedida === 'caixa' ? (parseFloat(itensPorCaixa) || 1) : 1);
-  const custoPorUnidade = (parseFloat(custoPacote) || 0) / (tipoMedida === 'caixa' ? (parseFloat(itensPorCaixa) || 1) : 1);
-  
-  // Cálculo do retorno esperado (Lucro Total = (Preço Venda * Total Unidades) - Custo Total)
-  const custoTotal = parseFloat(custoPacote) || 0;
-  const faturamentoEsperado = (parseFloat(precoVenda) || 0) * totalUnidades;
-  const lucroEsperado = faturamentoEsperado - custoTotal;
+  // Cálculos automáticos para exibição do Lucro Previsto
+  const custoNum = parseFloat(custoAquisicao) || 0;
+  const vendaNum = parseFloat(precoVenda) || 0;
+  const qtdNum = parseInt(quantidade) || 0;
 
-  const salvar = async (e) => {
+  const lucroUnitario = vendaNum - custoNum;
+  const lucroTotalPrevisto = lucroUnitario * qtdNum;
+  const margemLucro = custoNum > 0 ? ((lucroUnitario / custoNum) * 100).toFixed(0) : 0;
+
+  const salvarProduto = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setMensagem('Salvando...');
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setMensagem('❌ Você precisa fazer login!');
-      setLoading(false);
+    if (!nome || vendaNum <= 0 || qtdNum <= 0) {
+      alert('Por favor, preencha o nome, preço de venda e quantidade.');
       return;
     }
 
-    const { error } = await supabase.from('produtos').insert([{
-      user_id: user.id,
-      nome: nome,
-      custo_aquisicao: custoPorUnidade,
-      preco_venda: parseFloat(precoVenda),
-      quantidade_estoque: totalUnidades
-    }]);
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (error) {
-      setMensagem('❌ Erro: ' + error.message);
-    } else {
-      setMensagem('✅ Produto salvo! Adicione o próximo.');
-      // Limpa tudo para adicionar um novo produto
-      setNome(''); setQtdCaixas(''); setItensPorCaixa(''); setCustoPacote(''); setPrecoVenda('');
-      
-      // Apaga a mensagem de sucesso depois de 3 segundos
-      setTimeout(() => setMensagem(''), 3000); 
+    if (user) {
+      const { error } = await supabase.from('produtos').insert([
+        {
+          user_id: user.id,
+          nome,
+          custo_aquisicao: custoNum,
+          preco_venda: vendaNum,
+          quantidade_estoque: qtdNum
+        }
+      ]);
+
+      if (error) {
+        alert('Erro ao cadastrar produto: ' + error.message);
+      } else {
+        alert('Produto cadastrado com sucesso! 🎉');
+        router.push('/estoque');
+      }
     }
     setLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-white p-6 shadow-sm"><h1 className="text-2xl font-bold">Novo Produto 📦</h1></div>
-      
-      <div className="p-6">
-        <form onSubmit={salvar} className="bg-white p-5 rounded-2xl shadow-sm border space-y-4">
-          <input required type="text" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome (Ex: Coca-Cola)" className="w-full p-3 border rounded-xl" />
-          
-          <select value={tipoMedida} onChange={(e) => setTipoMedida(e.target.value)} className="w-full p-3 border rounded-xl bg-white">
-            <option value="caixa">Comprei em Caixa / Fardo</option>
-            <option value="unidade">Comprei por Unidades soltas</option>
-          </select>
+    <div className="min-h-screen bg-gray-50 pb-24 p-6">
+      <div className="max-w-md mx-auto bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">Cadastrar Produto 📦</h1>
 
-          {tipoMedida === 'caixa' ? (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-gray-500 font-bold">Qtd de Caixas</label>
-                <input required type="number" value={qtdCaixas} onChange={(e) => setQtdCaixas(e.target.value)} placeholder="Ex: 2" className="w-full p-3 border rounded-xl" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 font-bold">Unidades na Caixa</label>
-                <input required type="number" value={itensPorCaixa} onChange={(e) => setItensPorCaixa(e.target.value)} placeholder="Ex: 12" className="w-full p-3 border rounded-xl" />
-              </div>
-            </div>
-          ) : (
+        <form onSubmit={salvarProduto} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Nome do Produto</label>
+            <input
+              type="text"
+              placeholder="Ex: Coca-Cola 2L"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              className="w-full p-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-gray-800"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-gray-500 font-bold">Total de Unidades compradas</label>
-              <input required type="number" value={qtdCaixas} onChange={(e) => setQtdCaixas(e.target.value)} placeholder="Ex: 24" className="w-full p-3 border rounded-xl" />
+              <label className="block text-xs font-bold text-gray-600 uppercase mb-1">
+                💸 Custo de Compra (R$)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Ex: 4.50"
+                value={custoAquisicao}
+                onChange={(e) => setCustoAquisicao(e.target.value)}
+                className="w-full p-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-gray-800"
+                required
+              />
+              <span className="text-[10px] text-gray-400">Quanto você gastou</span>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-600 uppercase mb-1">
+                🏷️ Preço Venda (R$)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Ex: 8.00"
+                value={precoVenda}
+                onChange={(e) => setPrecoVenda(e.target.value)}
+                className="w-full p-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-gray-800"
+                required
+              />
+              <span className="text-[10px] text-gray-400">Preço final ao cliente</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Quantidade em Estoque</label>
+            <input
+              type="number"
+              placeholder="Ex: 24"
+              value={quantidade}
+              onChange={(e) => setQuantidade(e.target.value)}
+              className="w-full p-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-gray-800"
+              required
+            />
+          </div>
+
+          {/* PAINEL DE LUCRO PREVISTO EM TEMPO REAL */}
+          {vendaNum > 0 && (
+            <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl space-y-2 text-sm mt-4">
+              <div className="flex justify-between items-center text-emerald-900 font-bold">
+                <span>Lucro Unitário:</span>
+                <span className="text-emerald-600 font-black">R$ {lucroUnitario.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs text-emerald-800">
+                <span>Margem de Lucro:</span>
+                <span className="font-bold">{margemLucro}%</span>
+              </div>
+              <div className="border-t border-emerald-200 pt-2 flex justify-between items-center text-emerald-950 font-black">
+                <span>Lucro Total Previsto:</span>
+                <span className="text-lg text-emerald-700">R$ {lucroTotalPrevisto.toFixed(2)}</span>
+              </div>
             </div>
           )}
 
-          <div>
-            <label className="text-xs text-gray-500 font-bold">{tipoMedida === 'caixa' ? 'Valor pago por 1 CAIXA (R$)' : 'Valor pago na compra total (R$)'}</label>
-            <input required type="number" step="0.01" value={custoPacote} onChange={(e) => setCustoPacote(e.target.value)} placeholder="Ex: 36,00" className="w-full p-3 border rounded-xl" />
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-gray-800">Por quanto vai vender 1 UNIDADE? (R$)</label>
-            <input required type="number" step="0.01" value={precoVenda} onChange={(e) => setPrecoVenda(e.target.value)} placeholder="Ex: 5,00" className="w-full p-3 border rounded-xl border-emerald-500" />
-          </div>
-
-           {/* NOVO: Resumo Automático com Lucro Esperado */}
-          <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 text-sm text-emerald-900 space-y-1">
-            <p className="font-bold border-b border-emerald-200 pb-2 mb-2">📊 Resumo Automático:</p>
-            <p>📦 Estoque total: <strong>{totalUnidades || 0} unid.</strong></p>
-            <p>💰 Custo por unidade: <strong>R$ {(custoPorUnidade || 0).toFixed(2)}</strong></p>
-            <p>💸 Faturamento total: <strong>R$ {faturamentoEsperado.toFixed(2)}</strong></p>
-            <p className="text-emerald-700 font-black mt-2 pt-2 border-t border-emerald-200">
-              🚀 Lucro Esperado: R$ {lucroEsperado > 0 ? lucroEsperado.toFixed(2) : '0.00'}
-            </p>
-          </div>
-          
-          {mensagem && <p className={`font-bold text-center ${mensagem.includes('❌') ? 'text-red-600' : 'text-emerald-600'}`}>{mensagem}</p>}
-          
-          <button type="submit" disabled={loading} className="w-full bg-emerald-500 text-white font-bold py-4 rounded-xl active:scale-95 transition-all">
-            {loading ? 'Salvando...' : 'Salvar e Adicionar Outro'}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 rounded-2xl text-lg shadow-md active:scale-95 transition-all mt-4"
+          >
+            {loading ? 'Cadastrando...' : 'Salvar Produto'}
           </button>
         </form>
       </div>
