@@ -8,6 +8,8 @@ export default function Vender() {
   const [produtoSelecionado, setProdutoSelecionado] = useState('');
   const [quantidade, setQuantidade] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [vendaFinalizada, setVendaFinalizada] = useState(null); // Guarda os dados da venda para o Zap
+  const [erro, setErro] = useState('');
 
   useEffect(() => {
     carregarProdutos();
@@ -16,115 +18,144 @@ export default function Vender() {
   const carregarProdutos = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data } = await supabase
-        .from('produtos')
-        .select('*')
-        .eq('user_id', user.id)
-        .gt('quantidade_estoque', 0)
-        .order('nome');
+      const { data } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
       if (data) setProdutos(data);
     }
   };
 
-  const registrarVenda = async (e) => {
+  const realizarVenda = async (e) => {
     e.preventDefault();
-    if (!produtoSelecionado || quantidade <= 0) {
-      alert('Selecione um produto e a quantidade.');
-      return;
-    }
-
-    const prod = produtos.find(p => p.id === produtoSelecionado);
-    if (!prod) return;
-
-    if (quantidade > prod.quantidade_estoque) {
-      alert(`Estoque insuficiente! Você só tem ${prod.quantidade_estoque} unidades.`);
-      return;
-    }
-
     setLoading(true);
+    setErro('');
+
     const { data: { user } } = await supabase.auth.getUser();
+    const produto = produtos.find(p => p.id === produtoSelecionado);
 
-    const valorTotal = prod.preco_venda * quantidade;
-    const lucroRealizado = (prod.preco_venda - (prod.custo_aquisicao || 0)) * quantidade;
+    if (!user || !produto) {
+      setErro('Selecione um produto.');
+      setLoading(false); return;
+    }
+    if (produto.quantidade_estoque < quantidade) {
+      setErro(`Estoque insuficiente! Você só tem ${produto.quantidade_estoque} un.`);
+      setLoading(false); return;
+    }
 
-    // 1. GRAVA A VENDA NO HISTÓRICO (Para os relatórios)
-    const { error: erroVenda } = await supabase.from('vendas').insert([
-      {
-        user_id: user.id,
-        produto_id: prod.id,
-        quantidade_vendida: parseInt(quantidade),
-        valor_total: valorTotal,
-        lucro_realizado: lucroRealizado
-      }
-    ]);
+    const valorTotal = produto.preco_venda * quantidade;
+    const lucroRealizado = (produto.preco_venda - (produto.custo_aquisicao || 0)) * quantidade;
+
+    // 1. GRAVA A VENDA (Para aparecer nos relatórios)
+    const { error: erroVenda } = await supabase.from('vendas').insert([{
+      user_id: user.id,
+      produto_id: produto.id,
+      quantidade_vendida: parseInt(quantidade),
+      valor_total: valorTotal,
+      lucro_realizado: lucroRealizado
+    }]);
 
     if (erroVenda) {
-      alert('Erro ao registrar venda: ' + erroVenda.message);
-      setLoading(false);
-      return;
+      setErro('Erro ao registrar no relatório: ' + erroVenda.message);
+      setLoading(false); return;
     }
 
-    // 2. DAR BAIXA NO ESTOQUE
+    // 2. DÁ BAIXA NO ESTOQUE NO BANCO DE DADOS
+    const novoEstoque = produto.quantidade_estoque - parseInt(quantidade);
     const { error: erroEstoque } = await supabase
       .from('produtos')
-      .update({ quantidade_estoque: prod.quantidade_estoque - parseInt(quantidade) })
-      .eq('id', prod.id);
+      .update({ quantidade_estoque: novoEstoque })
+      .eq('id', produto.id);
 
     if (erroEstoque) {
-      alert('Erro ao dar baixa no estoque: ' + erroEstoque.message);
+      setErro('Erro ao abater do estoque: ' + erroEstoque.message);
     } else {
-      alert(`Venda realizada com sucesso! 💰 Total: R$ ${valorTotal.toFixed(2)}`);
-      setProdutoSelecionado('');
-      setQuantidade(1);
-      carregarProdutos(); // Atualiza a lista com o novo estoque
+      // Atualiza a lista na tela e mostra a tela de sucesso com WhatsApp
+      setProdutos(produtos.map(p => p.id === produto.id ? {...p, quantidade_estoque: novoEstoque} : p));
+      
+      setVendaFinalizada({
+        produtoNome: produto.nome,
+        qtd: quantidade,
+        valor: valorTotal.toFixed(2),
+        data: new Date().toLocaleTimeString()
+      });
     }
-
     setLoading(false);
   };
 
+  const compartilharWhatsApp = () => {
+    if (!vendaFinalizada) return;
+    const texto = `🧾 *Comprovante de Compra*\n\n*Item:* ${vendaFinalizada.produtoNome}\n*Quantidade:* ${vendaFinalizada.qtd}\n*Total:* R$ ${vendaFinalizada.valor}\n\n_Obrigado por comprar conosco!_`;
+    const url = `https://wa.me/?text=${encodeURIComponent(texto)}`;
+    window.open(url, '_blank');
+  };
+
+  const novaVenda = () => {
+    setVendaFinalizada(null);
+    setQuantidade(1);
+    setProdutoSelecionado('');
+    carregarProdutos();
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 p-6">
-      <div className="max-w-md mx-auto bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Registrar Venda 💰</h1>
-
-        <form onSubmit={registrarVenda} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Selecione o Produto</label>
-            <select
-              value={produtoSelecionado}
-              onChange={(e) => setProdutoSelecionado(e.target.value)}
-              className="w-full p-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-gray-800 bg-white"
-              required
-            >
-              <option value="">-- Selecione o produto --</option>
-              {produtos.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.nome} - R$ {p.preco_venda.toFixed(2)} ({p.quantidade_estoque} un em estoque)
-                </option>
-              ))}
-            </select>
+    <div className="min-h-screen bg-gray-50 pb-24">
+      <div className="bg-emerald-500 p-6 shadow-sm rounded-b-3xl">
+        <h1 className="text-2xl font-bold text-white">Nova Venda 💰</h1>
+      </div>
+      
+      <div className="p-6 -mt-4">
+        
+        {/* TELA DE SUCESSO PÓS-VENDA */}
+        {vendaFinalizada ? (
+          <div className="bg-white p-6 rounded-2xl shadow-xl border text-center space-y-6">
+            <div className="text-6xl">✅</div>
+            <h2 className="text-2xl font-black text-gray-800">Venda Concluída!</h2>
+            <div className="bg-gray-50 p-4 rounded-xl text-left border">
+              <p><strong>Item:</strong> {vendaFinalizada.produtoNome}</p>
+              <p><strong>Quantidade:</strong> {vendaFinalizada.qtd}</p>
+              <p className="text-xl font-bold mt-2">Total: R$ {vendaFinalizada.valor}</p>
+            </div>
+            
+            <button onClick={compartilharWhatsApp} className="w-full bg-[#25D366] text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2">
+              📱 Enviar Comprovante no Zap
+            </button>
+            <button onClick={novaVenda} className="w-full bg-gray-200 text-gray-800 font-bold py-4 rounded-xl">
+              Fazer Nova Venda
+            </button>
           </div>
+        ) : (
+          /* FORMULÁRIO DE VENDA NORMAL */
+          <form onSubmit={realizarVenda} className="bg-white p-5 rounded-2xl shadow-xl border border-gray-100 space-y-4">
+            <div>
+              <label className="text-xs text-gray-500 font-bold">O que você está vendendo?</label>
+              <select required value={produtoSelecionado} onChange={(e) => setProdutoSelecionado(e.target.value)} className="w-full p-3 border rounded-xl bg-white mt-1">
+                <option value="">Selecione o produto...</option>
+                {produtos.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome} (Estoque: {p.quantidade_estoque}) - R$ {p.preco_venda.toFixed(2)}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-xs font-bold text-gray-600 uppercase mb-1">Quantidade Vendida</label>
-            <input
-              type="number"
-              min="1"
-              value={quantidade}
-              onChange={(e) => setQuantidade(e.target.value)}
-              className="w-full p-3.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-gray-800"
-              required
-            />
-          </div>
+            <div>
+              <label className="text-xs text-gray-500 font-bold">Quantas unidades?</label>
+              <input required type="number" min="1" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} className="w-full p-3 border rounded-xl mt-1 text-2xl text-center font-bold" />
+            </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 rounded-2xl text-lg shadow-md active:scale-95 transition-all mt-4"
-          >
-            {loading ? 'Concluindo Venda...' : 'Finalizar Venda 🚀'}
-          </button>
-        </form>
+            {produtoSelecionado && (
+              <div className="text-center p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <p className="text-sm text-gray-500">Valor Total a Cobrar</p>
+                <p className="text-3xl font-black text-gray-900">
+                  R$ {((produtos.find(p => p.id === produtoSelecionado)?.preco_venda || 0) * quantidade).toFixed(2)}
+                </p>
+              </div>
+            )}
+            
+            {erro && <p className="font-bold text-center text-red-600">❌ {erro}</p>}
+            
+            <button type="submit" disabled={loading || !produtoSelecionado} className="w-full bg-emerald-500 text-white font-bold py-4 rounded-xl">
+              {loading ? 'Processando...' : 'Finalizar Venda'}
+            </button>
+          </form>
+        )}
       </div>
       <BottomNav />
     </div>
