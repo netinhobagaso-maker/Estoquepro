@@ -10,7 +10,7 @@ export default function BottomNav() {
   const [autorizado, setAutorizado] = useState(true);
 
   // COLOQUE SEU E-MAIL DE TESTE AQUI PARA LIBERAR ACESSO ILIMITADO
-  const EMAIL_TESTE_LIBERADO = 'seuemaildeteste@gmail.com'; 
+  const EMAIL_TESTE_LIBERADO = 'raidias0007@gmail.com'; 
 
   useEffect(() => {
     const verificarAcesso = async () => {
