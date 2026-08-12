@@ -1,79 +1,70 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import BottomNav from '../components/BottomNav';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { supabase } from '../../lib/supabase';
+import BottomNav from '../../components/BottomNav';
 
-export default function Home() {
-  const [faturamentoHoje, setFaturamentoHoje] = useState(0);
+export default function Inicio() {
+  const [faturamento, setFaturamento] = useState(0);
+  const [gastoEstoque, setGastoEstoque] = useState(0);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
 
   useEffect(() => {
-    const buscarFaturamento = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setLoading(false);
-        return; // Se não tiver usuário, não busca
-      }
-
-      // Pega a data de hoje (começo e fim do dia)
-      const hojeInicio = new Date();
-      hojeInicio.setHours(0, 0, 0, 0);
-      const hojeFim = new Date();
-      hojeFim.setHours(23, 59, 59, 999);
-
-      const { data, error } = await supabase
-        .from('vendas')
-        .select('valor_total')
-        .eq('user_id', user.id)
-        .gte('created_at', hojeInicio.toISOString())
-        .lte('created_at', hojeFim.toISOString());
-
-      if (data && !error) {
-        const total = data.reduce((acc, venda) => acc + (venda.valor_total || 0), 0);
-        setFaturamentoHoje(total);
-      }
-      setLoading(false);
-    };
-
-    buscarFaturamento();
+    carregarResumo();
   }, []);
+
+  const carregarResumo = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      // 1. PUXA O VALOR ATUALIZADO DAS VENDAS
+      const { data: vendas } = await supabase.from('vendas').select('valor_total').eq('user_id', user.id);
+      if (vendas) {
+        const totalVendido = vendas.reduce((acc, v) => acc + (Number(v.valor_total) || 0), 0);
+        setFaturamento(totalVendido);
+      }
+
+      // 2. PUXA O VALOR TOTAL GASTO NO ESTOQUE ATUAL
+      const { data: produtos } = await supabase.from('produtos').select('custo_aquisicao, quantidade_estoque').eq('user_id', user.id);
+      if (produtos) {
+        const totalGasto = produtos.reduce((acc, p) => {
+          const custo = Number(p.custo_aquisicao) || 0;
+          const qtd = Number(p.quantidade_estoque) || 0;
+          return acc + (custo * qtd);
+        }, 0);
+        setGastoEstoque(totalGasto);
+      }
+    }
+    setLoading(false);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="p-6">
-        <h1 className="text-2xl font-bold mb-6 mt-4">Olá, Empreendedor! 👋</h1>
-        
-        <div className="bg-emerald-500 rounded-3xl p-6 text-white shadow-lg mb-8">
-          <p className="text-emerald-100 text-sm mb-1">Faturamento de Hoje</p>
-          <h2 className="text-4xl font-black">
-            {loading ? 'R$ ...' : `R$ ${faturamentoHoje.toFixed(2)}`}
-          </h2>
+      <div className="bg-[#111827] p-6 shadow-sm rounded-b-3xl">
+        <h1 className="text-2xl font-bold text-white">Meu Negócio 🏪</h1>
+        <p className="text-gray-400 text-sm mt-1">Resumo em tempo real</p>
+      </div>
+
+      <div className="p-6 -mt-4 space-y-4">
+        {/* CAIXA DE FATURAMENTO QUE ATUALIZA AUTOMATICAMENTE */}
+        <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100">
+          <p className="text-xs text-gray-500 font-bold uppercase mb-1">Entradas (Caixa Atual)</p>
+          {loading ? (
+             <p className="text-gray-400">Calculando...</p>
+          ) : (
+             <h2 className="text-4xl font-black text-emerald-500">R$ {faturamento.toFixed(2)}</h2>
+          )}
         </div>
 
-        <h3 className="text-lg font-bold mb-4 text-gray-800">Ações Rápidas</h3>
-        <div className="grid grid-cols-2 gap-4">
-          
-          <button 
-            onClick={() => router.push('/estoque')} // Agora o botão funciona!
-            className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-3 active:scale-95 transition-all"
-          >
-            <div className="text-3xl">🏷️</div>
-            <span className="font-bold text-gray-700">Ver Estoque</span>
-          </button>
-
-          <button 
-             onClick={() => router.push('/relatorios')} // Agora o botão funciona!
-            className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-3 active:scale-95 transition-all"
-          >
-            <div className="text-3xl">📊</div>
-            <span className="font-bold text-gray-700">Relatórios</span>
-          </button>
-
+        {/* CAIXA DE TOTAL GASTO (CUSTO) */}
+        <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
+          <p className="text-xs text-gray-500 font-bold uppercase mb-1">Total Gasto em Estoque</p>
+          {loading ? (
+             <p className="text-gray-400">Calculando...</p>
+          ) : (
+             <h3 className="text-2xl font-black text-red-500">R$ {gastoEstoque.toFixed(2)}</h3>
+          )}
         </div>
       </div>
+      
       <BottomNav />
     </div>
   );
