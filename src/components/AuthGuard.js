@@ -27,10 +27,16 @@ export default function AuthGuard({ children }) {
     setUser(usuarioAtual);
 
     if (usuarioAtual) {
-      // COLOCAR SEU EMAIL AQUI PARA VOCÊ ACESSAR TUDO SEM PAGAR
-      if (usuarioAtual.email === 'raidias0007@gmail.com') {
-        setTemAssinatura(true);
+      // Pega o e-mail que logou, tira espaços invisíveis e deixa tudo minúsculo
+      const emailLogado = usuarioAtual.email?.trim().toLowerCase();
+      
+      // >>> COLOQUE SEU E-MAIL EXATO AQUI EMBAIXO <<<
+      const meuEmailDeDono = 'raidias0007@gmail.com';
+
+      if (emailLogado === meuEmailDeDono) {
+        setTemAssinatura(true); // É o dono? Libera acesso total!
       } else {
+        // Se não for o dono, verifica o Stripe
         const { data: sub } = await supabase.from('assinaturas').select('status').eq('user_id', usuarioAtual.id).single();
         if (sub && (sub.status === 'active' || sub.status === 'trialing')) {
           setTemAssinatura(true);
@@ -72,6 +78,12 @@ export default function AuthGuard({ children }) {
     }
     setAssinando(false);
   };
+  
+  const sairDaConta = async () => {
+    await supabase.auth.signOut();
+    setTemAssinatura(false);
+    setUser(null);
+  };
 
   if (loading) return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white font-bold">Carregando...</div>;
 
@@ -105,7 +117,7 @@ export default function AuthGuard({ children }) {
           <button onClick={iniciarAssinatura} disabled={assinando} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl active:scale-95 transition-all">
             {assinando ? 'Gerando Pagamento...' : 'Liberar Acesso 💳'}
           </button>
-          <button onClick={() => supabase.auth.signOut()} className="w-full mt-6 text-sm text-gray-500">Sair da conta</button>
+          <button onClick={sairDaConta} className="w-full mt-6 text-sm text-gray-500 hover:text-white">Sair da conta</button>
         </div>
       </div>
     );
