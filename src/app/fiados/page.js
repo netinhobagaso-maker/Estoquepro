@@ -8,7 +8,6 @@ export default function Fiados() {
   const [loading, setLoading] = useState(true);
   const [idExpandido, setIdExpandido] = useState(null);
 
-  // Estados para nova dívida do cliente expandido
   const [novaDescricao, setNovaDescricao] = useState('');
   const [novoValor, setNovoValor] = useState('');
 
@@ -43,7 +42,6 @@ export default function Fiados() {
     
     const valorAdicional = Number(novoValor);
     const novoTotal = Number(fiado.valor) + valorAdicional;
-    
     const historicoAtual = fiado.historico || [];
     
     if (historicoAtual.length === 0 && fiado.descricao) {
@@ -83,7 +81,11 @@ export default function Fiados() {
                     <p className="font-bold text-gray-800 text-lg flex items-center gap-2">
                       {fiado.nome_cliente} {idExpandido === fiado.id ? '👇' : '👉'}
                     </p>
-                    <p className="text-xs text-gray-400">{fiado.telefone || 'Sem telefone'}</p>
+                    {/* EXIBE O ESTABELECIMENTO AQUI SE EXISTIR */}
+                    <p className="text-xs text-gray-400">
+                      {fiado.estabelecimento ? `🏪 ${fiado.estabelecimento} | ` : ''} 
+                      {fiado.telefone || 'Sem telefone'}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="font-black text-red-500 text-lg">R$ {Number(fiado.valor).toFixed(2)}</p>
