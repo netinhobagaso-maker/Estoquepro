@@ -16,32 +16,39 @@ export default function NovoFiado() {
     if (!nome) return alert("O nome do cliente é obrigatório.");
     setSalvando(true);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    const valorInicial = Number(valor) || 0;
-    const historicoInicial = valorInicial > 0 ? [{
-      data: new Date().toISOString(),
-      desc: descricao || 'Abertura de conta / Saldo inicial',
-      val: valorInicial
-    }] : [];
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const valorInicial = Number(valor) || 0;
+      const historicoInicial = valorInicial > 0 ? [{
+        data: new Date().toISOString(),
+        desc: descricao || 'Abertura de conta / Saldo inicial',
+        val: valorInicial
+      }] : [];
 
-    const { error } = await supabase.from('fiados').insert([{
-      user_id: user.id,
-      cliente: nome, // Salva no banco compatível
-      nome_cliente: nome,
-      telefone: telefone,
-      descricao: descricao || 'Cliente cadastrado',
-      valor: valorInicial,
-      historico: historicoInicial
-    }]);
+      // Enviando dados básicos à prova de falhas
+      const { error } = await supabase.from('fiados').insert([{
+        user_id: user.id,
+        nome_cliente: nome,
+        cliente: nome, // Mantendo por segurança (compatibilidade com colunas antigas)
+        telefone: telefone || null,
+        descricao: descricao || 'Cliente cadastrado',
+        valor: valorInicial,
+        historico: historicoInicial,
+        status: 'pendente'
+      }]);
 
-    setSalvando(false);
-
-    if (error) {
-      alert("Erro ao salvar: " + error.message);
-    } else {
-      alert("Cliente criado com sucesso!");
-      router.push('/fiados');
+      if (error) {
+        console.error("Erro Supabase:", error);
+        alert("Erro ao salvar no banco: " + error.message);
+        setSalvando(false);
+      } else {
+        alert("Cliente cadastrado com sucesso! ✅");
+        router.push('/fiados');
+      }
+    } catch (err) {
+      alert("Erro inesperado: " + err.message);
+      setSalvando(false);
     }
   };
 
@@ -77,7 +84,7 @@ export default function NovoFiado() {
             </div>
           </div>
 
-          <button onClick={salvarCliente} disabled={salvando} className="w-full bg-emerald-500 text-white font-black p-4 rounded-xl mt-4 active:scale-95">
+          <button onClick={salvarCliente} disabled={salvando} className="w-full bg-[#10b981] text-white font-black p-4 rounded-xl mt-4 active:scale-95">
             {salvando ? 'Salvando...' : 'Cadastrar Cliente'}
           </button>
 
