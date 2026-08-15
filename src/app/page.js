@@ -13,7 +13,7 @@ export default function Home() {
   const [produtoModal, setProdutoModal] = useState(null);
   const [quantidadeAdicionar, setQuantidadeAdicionar] = useState('');
   
-  // Valores financeiros dinâmicos
+  // Valores financeiros
   const [faturamento, setFaturamento] = useState(0);
   const [lucro, setLucro] = useState(0);
   const [estoqueTotal, setEstoqueTotal] = useState(0);
@@ -25,30 +25,49 @@ export default function Home() {
   const carregarDadosDinamicos = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      // 1. Carrega Produtos e calcula Valor do Estoque e Lucro estimado
+      // 1. Carrega Produtos (para saber os custos e valor do estoque)
       const { data: prodData } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
+      
+      const custosProdutos = {};
+      let valorEstoque = 0;
+
       if (prodData) {
         setProdutos(prodData);
         
-        // Soma do valor total do estoque (Preço de venda * Quantidade)
-        const valorEstoque = prodData.reduce((acc, p) => acc + (Number(p.preco_venda || 0) * Number(p.quantidade_estoque || 0)), 0);
+        prodData.forEach(p => {
+          // Guarda o custo de cada produto em um mapa para calcular o lucro das vendas
+          custosProdutos[p.id] = Number(p.preco_custo || p.custo || 0);
+          // Valor total do estoque atual
+          valorEstoque += Number(p.preco_venda || 0) * Number(p.quantidade_estoque || 0);
+        });
+        
         setEstoqueTotal(valorEstoque);
-
-        // Lucro potencial do estoque atual (Venda - Custo) * Qtd
-        const lucroEstoque = prodData.reduce((acc, p) => {
-          const custo = Number(p.preco_custo || p.custo || 0);
-          const venda = Number(p.preco_venda || 0);
-          const qtd = Number(p.quantidade_estoque || 0);
-          return acc + ((venda - custo) * qtd);
-        }, 0);
-        setLucro(lucroEstoque);
       }
 
-      // 2. Carrega Vendas e calcula o Faturamento Total automaticamente
-      const { data: vendaData } = await supabase.from('vendas').select('total').eq('user_id', user.id);
+      // 2. Carrega Vendas para calcular o Faturamento e o Lucro REAL obtido nas vendas
+      const { data: vendaData } = await supabase.from('vendas').select('*').eq('user_id', user.id);
+      
       if (vendaData) {
-        const totalFat = vendaData.reduce((acc, v) => acc + Number(v.total || 0), 0);
+        let totalFat = 0;
+        let lucroRealVendas = 0;
+
+        vendaData.forEach(v => {
+          totalFat += Number(v.total || 0);
+
+          // Se a venda tem itens, calcula o lucro exato (Preço de Venda - Custo de cada item)
+          if (v.itens && Array.isArray(v.itens)) {
+            v.itens.forEach(item => {
+              const precoVendaItem = Number(item.preco || 0);
+              const qtdItem = Number(item.quantidade || 0);
+              const custoUnitario = custosProdutos[item.produto_id] !== undefined ? custosProdutos[item.produto_id] : Number(item.custo || 0);
+              
+              lucroRealVendas += (precoVendaItem - custoUnitario) * qtdItem;
+            });
+          }
+        });
+
         setFaturamento(totalFat);
+        setLucro(lucroRealVendas);
       }
     }
     setLoading(false);
@@ -66,7 +85,7 @@ export default function Home() {
       alert("Estoque atualizado com sucesso!");
       setProdutoModal(null);
       setQuantidadeAdicionar('');
-      carregarDadosDinamicos(); // Atualiza os valores na tela na hora!
+      carregarDadosDinamicos();
     }
   };
 
@@ -86,7 +105,7 @@ export default function Home() {
         </h1>
       </div>
 
-      {/* CARDS FINANCEIROS DINÂMICOS */}
+      {/* CARDS FINANCEIROS */}
       <div className="-mt-10 px-6 space-y-4">
         <div className="bg-white p-5 rounded-2xl shadow-md border border-gray-100">
           <p className="text-sm text-gray-500 font-bold mb-1">Faturamento Total</p>
@@ -95,7 +114,7 @@ export default function Home() {
         
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-2xl shadow-md border border-gray-100">
-            <p className="text-[11px] text-gray-500 font-bold mb-1">Lucro Estimado</p>
+            <p className="text-[11px] text-gray-500 font-bold mb-1">Lucro Obtido (Vendas)</p>
             <h2 className="text-xl font-black text-blue-600">R$ {lucro.toFixed(2)}</h2>
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-md border border-gray-100">
