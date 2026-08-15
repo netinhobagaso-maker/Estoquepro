@@ -55,7 +55,6 @@ export default function Fiados() {
   const adicionarConta = async (fiado) => {
     if (!novaDescricao || !novoValor) return alert("Preencha item e valor.");
     
-    // TRATAMENTO ANTI-ERRO (Converte vírgula para ponto e protege o cálculo)
     const valorTratado = String(novoValor).replace(',', '.');
     const valorAdicional = Number(valorTratado);
 
@@ -63,15 +62,15 @@ export default function Fiados() {
       return alert("Por favor, insira um valor numérico válido (ex: 10.50).");
     }
     
-    // Se estava pago, zera a conta antiga e soma a nova.
     const valorAtual = fiado.status === 'pago' ? 0 : Number(fiado.valor || 0);
     const novoTotal = valorAtual + valorAdicional;
     
-    const historicoAtual = fiado.historico || [];
+    // A MÁGICA ESTÁ AQUI: Se estava pago, ele apaga o histórico antigo e cria um novo do zero!
+    const historicoAtual = fiado.status === 'pago' ? [] : (fiado.historico || []);
+    
     const itemNovo = { data: new Date().toISOString(), desc: novaDescricao, val: valorAdicional };
     const novoHistorico = [...historicoAtual, itemNovo];
 
-    // Força o envio do status pendente
     const { error } = await supabase.from('fiados')
       .update({ 
         valor: novoTotal, 
@@ -81,7 +80,7 @@ export default function Fiados() {
       .eq('id', fiado.id);
 
     if (!error) {
-      alert("Nova dívida adicionada! O cliente voltou a ficar DEVENDO.");
+      alert("Nova fatura iniciada com sucesso!");
       setNovaDescricao('');
       setNovoValor('');
       carregarDados();
@@ -150,7 +149,6 @@ export default function Fiados() {
 
       <div className="px-6 mt-6 space-y-4">
         {fiados.map(fiado => {
-          // AUI GARANTE QUE SÓ É PAGO SE O VALOR FOR MENOR OU IGUAL A ZERO E O STATUS FOR PAGO
           const estaPago = fiado.status === 'pago' || Number(fiado.valor) <= 0;
 
           return (
@@ -174,14 +172,32 @@ export default function Fiados() {
 
               {idExpandido === fiado.id && (
                 <div className="bg-gray-50 p-5 border-t border-gray-100">
+                  
+                  {/* HISTÓRICO ATUAL */}
+                  {!estaPago && fiado.historico && fiado.historico.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-[10px] font-bold text-gray-500 mb-2 uppercase">Fatura Atual</h4>
+                      <ul className="space-y-1">
+                        {fiado.historico.map((h, i) => (
+                          <li key={i} className="flex justify-between text-xs text-gray-600 border-b border-gray-200 border-dashed pb-1">
+                            <span>{h.desc}</span>
+                            <span className="font-bold text-gray-800">R$ {Number(h.val).toFixed(2)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   <div className="bg-white p-4 rounded-xl border border-gray-200 mb-4 shadow-sm">
-                    <p className="text-xs font-bold text-gray-800 mb-3">Adicionar na conta:</p>
+                    <p className="text-xs font-bold text-gray-800 mb-3">
+                      {estaPago ? "Iniciar Nova Fatura:" : "Adicionar na conta:"}
+                    </p>
                     <div className="flex gap-2">
                       <input type="text" placeholder="Item" value={novaDescricao} onChange={e => setNovaDescricao(e.target.value)} className="w-full p-3 border rounded-xl bg-gray-50 text-sm" />
                       <input type="text" placeholder="R$" value={novoValor} onChange={e => setNovoValor(e.target.value)} className="w-24 p-3 border rounded-xl bg-gray-50 text-sm" />
                     </div>
                     <button onClick={() => adicionarConta(fiado)} className="w-full mt-3 bg-blue-600 text-white font-bold p-3 rounded-xl text-sm active:scale-95 shadow-md">
-                      ➕ Somar na Conta
+                      ➕ {estaPago ? "Criar Nova Dívida" : "Somar na Conta"}
                     </button>
                   </div>
 
