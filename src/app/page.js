@@ -32,13 +32,14 @@ export default function Home() {
       if (prodData) {
         setProdutos(prodData);
         prodData.forEach(p => {
+          // Salva o preço de custo para usar no cálculo do lucro
           custosProdutos[p.id] = Number(p.preco_custo || p.custo || 0);
           valorEstoque += Number(p.preco_venda || 0) * Number(p.quantidade_estoque || 0);
         });
         setEstoqueTotal(valorEstoque);
       }
 
-      // 2. Carrega Vendas contornando o erro de NaN
+      // 2. Carrega Vendas
       const { data: vendaData } = await supabase.from('vendas').select('*').eq('user_id', user.id);
       
       if (vendaData) {
@@ -48,7 +49,6 @@ export default function Home() {
         vendaData.forEach(v => {
           const valorDaVenda = Number(v.total || v.valor_total || 0);
           
-          // Se o valor não for um erro NaN, ele soma no faturamento
           if (!isNaN(valorDaVenda)) {
             totalFat += valorDaVenda;
           }
@@ -58,11 +58,11 @@ export default function Home() {
               const precoVendaItem = Number(item.preco_venda || item.preco || 0);
               const qtdItem = Number(item.quantidade || 1);
               
-              // Busca o ID correto para achar o custo
               const idDoProduto = item.produto_id || item.id;
-              const custoUnitario = custosProdutos[idDoProduto] !== undefined ? custosProdutos[idDoProduto] : Number(item.custo || 0);
+              // Puxa o custo real do produto
+              const custoUnitario = custosProdutos[idDoProduto] !== undefined ? custosProdutos[idDoProduto] : Number(item.preco_custo || item.custo || 0);
               
-              // Se os números estiverem certinhos, ele calcula o lucro daquela venda
+              // Lucro = (Venda - Custo) * Quantidade
               if (!isNaN(precoVendaItem) && !isNaN(custoUnitario)) {
                 lucroRealVendas += (precoVendaItem - custoUnitario) * qtdItem;
               }
