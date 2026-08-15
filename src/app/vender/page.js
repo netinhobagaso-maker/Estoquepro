@@ -1,25 +1,20 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRouter } from 'next/navigation';
 import BottomNav from '../../components/BottomNav';
 
 export default function Vender() {
+  const router = useRouter();
   const [produtos, setProdutos] = useState([]);
+  const [carrinho, setCarrinho] = useState([]);
   const [produtoSelecionado, setProdutoSelecionado] = useState('');
   const [quantidade, setQuantidade] = useState(1);
-  
-  // Lista de itens na venda atual
-  const [itensVenda, setItensVenda] = useState([]);
-  
-  // Controle de finalização (Fiado)
-  const [isFiado, setIsFiado] = useState(false);
-  const [nomeCliente, setNomeCliente] = useState('');
-  
-  const [loading, setLoading] = useState(false);
-  const [erro, setErro] = useState('');
-  const [sucesso, setSucesso] = useState('');
+  const [salvando, setSalvando] = useState(false);
 
-  useEffect(() => { carregarProdutos(); }, []);
+  useEffect(() => {
+    carregarProdutos();
+  }, []);
 
   const carregarProdutos = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -29,188 +24,123 @@ export default function Vender() {
     }
   };
 
-  const adicionarNaLista = () => {
-    if (!produtoSelecionado || quantidade <= 0) return;
-    
+  const adicionarAoCarrinho = () => {
+    if (!produtoSelecionado || quantidade < 1) return;
     const prod = produtos.find(p => p.id === produtoSelecionado);
     if (!prod) return;
 
-    // Calcula se já tem desse item na lista para não deixar vender mais que o estoque
-    const qtdJaNaLista = itensVenda.filter(i => i.id === prod.id).reduce((acc, i) => acc + i.quantidade, 0);
-    
-    if ((qtdJaNaLista + parseInt(quantidade)) > prod.quantidade_estoque) {
-      alert(`Estoque insuficiente! Você só tem ${prod.quantidade_estoque} un disponíveis.`);
+    if (prod.quantidade_estoque < quantidade) {
+      alert(`Você só tem ${prod.quantidade_estoque} unidades de ${prod.nome} no estoque!`);
       return;
     }
 
-    const novoItem = {
+    const itemNovo = {
       id: prod.id,
       nome: prod.nome,
-      quantidade: parseInt(quantidade),
       preco_venda: prod.preco_venda,
-      custo_aquisicao: prod.custo_aquisicao || 0,
-      estoque_original: prod.quantidade_estoque,
-      subtotal: prod.preco_venda * quantidade
+      custo_aquisicao: prod.custo_aquisicao,
+      quantidade: Number(quantidade)
     };
 
-    setItensVenda([...itensVenda, novoItem]);
+    setCarrinho([...carrinho, itemNovo]);
     setProdutoSelecionado('');
     setQuantidade(1);
   };
 
-  const removerDaLista = (index) => {
-    const novaLista = [...itensVenda];
-    novaLista.splice(index, 1);
-    setItensVenda(novaLista);
+  const removerDoCarrinho = (index) => {
+    const novoCarrinho = [...carrinho];
+    novoCarrinho.splice(index, 1);
+    setCarrinho(novoCarrinho);
   };
 
-  const totalGeral = itensVenda.reduce((acc, item) => acc + item.subtotal, 0);
-
   const finalizarVenda = async () => {
-    if (itensVenda.length === 0) return;
-    if (isFiado && !nomeCliente.trim()) {
-      alert("Por favor, digite o nome do cliente para anotar no fiado.");
+    if (carrinho.length === 0) return alert("O carrinho está vazio!");
+    setSalvando(true);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    let valorTotal = 0;
+    let lucroTotal = 0;
+
+    carrinho.forEach(item => {
+      valorTotal += item.preco_venda * item.quantidade;
+      lucroTotal += (item.preco_venda - item.custo_aquisicao) * item.quantidade;
+    });
+
+    // 1. Salva a Venda com o JSON dos itens
+    const { error } = await supabase.from('vendas').insert([{
+      user_id: user.id,
+      valor_total: valorTotal,
+      lucro_realizado: lucroTotal,
+      itens: carrinho
+    }]);
+
+    if (error) {
+      alert("Erro ao vender: " + error.message);
+      setSalvando(false);
       return;
     }
 
-    setLoading(true);
-    setErro('');
-    const { data: { user } } = await supabase.auth.getUser();
-
-    try {
-      // 1. DÁ BAIXA NO ESTOQUE E REGISTRA NO RELATÓRIO (Tabela 'vendas')
-      for (const item of itensVenda) {
-        // Baixa no estoque
-        const novoEstoque = item.estoque_original - item.quantidade;
-        await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
-
-        // Registro no relatório
-        const { error: erroVenda } = await supabase.from('vendas').insert([{
-          user_id: user.id,
-          produto_id: item.id,
-          quantidade_vendida: item.quantidade,
-          valor_total: item.subtotal,
-          lucro_realizado: (item.preco_venda - item.custo_aquisicao) * item.quantidade
-        }]);
-
-        // ALERTA DE ERRO DE BANCO DE DADOS EXIBIDO NA TELA
-        if (erroVenda) throw new Error("Erro na Tabela Vendas: " + erroVenda.message);
-      }
-
-      // 2. SE FOR FIADO, GRAVA NO CADERNO DE FIADOS
-      if (isFiado) {
-        const descricaoFiado = itensVenda.map(i => `${i.quantidade}x ${i.nome}`).join(', ');
-        const { error: erroFiado } = await supabase.from('fiados').insert([{
-          user_id: user.id,
-          cliente: nomeCliente,
-          valor: totalGeral,
-          descricao: descricaoFiado,
-          status: 'pendente'
-        }]);
-
-        if (erroFiado) throw new Error("Erro na Tabela Fiados: " + erroFiado.message);
-      }
-
-      // SUCESSO!
-      setSucesso(isFiado ? `Venda anotada no fiado para ${nomeCliente}!` : 'Venda paga e finalizada com sucesso!');
-      setItensVenda([]);
-      setIsFiado(false);
-      setNomeCliente('');
-      carregarProdutos(); // Atualiza o estoque na tela
-      
-      setTimeout(() => setSucesso(''), 4000);
-
-    } catch (error) {
-      // ESSE ERRO VAI TE MOSTRAR EXATAMENTE O QUE O SUPABASE RECUSOU
-      setErro(error.message);
+    // 2. Desconta do estoque cada item do carrinho
+    for (const item of carrinho) {
+      const prodBanco = produtos.find(p => p.id === item.id);
+      await supabase.from('produtos').update({
+        quantidade_estoque: prodBanco.quantidade_estoque - item.quantidade
+      }).eq('id', item.id);
     }
-    setLoading(false);
+
+    alert("Venda finalizada com sucesso!");
+    router.push('/');
   };
 
+  const totalCarrinho = carrinho.reduce((acc, item) => acc + (item.preco_venda * item.quantidade), 0);
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-32 p-6">
-      <div className="max-w-md mx-auto space-y-6">
-        <h1 className="text-2xl font-bold text-gray-800">Registrar Venda 💰</h1>
-
-        {/* ÁREA DE ADICIONAR ITENS */}
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-          <div>
-            <label className="text-xs font-bold text-gray-500 uppercase">Buscar Produto</label>
-            <select value={produtoSelecionado} onChange={(e) => setProdutoSelecionado(e.target.value)} className="w-full p-3 border rounded-xl bg-white mt-1">
-              <option value="">Selecione o produto...</option>
-              {produtos.map(p => (
-                <option key={p.id} value={p.id}>{p.nome} - R$ {p.preco_venda.toFixed(2)} (Estoque: {p.quantidade_estoque})</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex gap-3">
+    <div className="min-h-screen bg-gray-50 pb-28">
+      <div className="bg-[#111827] p-6 rounded-b-3xl text-white shadow-md">
+        <h1 className="text-2xl font-bold">Nova Venda 💰</h1>
+      </div>
+      <div className="p-6 -mt-4 space-y-4">
+        <div className="bg-white p-5 rounded-2xl shadow-sm border">
+          <label className="text-xs font-bold text-gray-500 mb-1 block">Escolha o Produto</label>
+          <select value={produtoSelecionado} onChange={(e) => setProdutoSelecionado(e.target.value)} className="w-full p-3 border rounded-xl bg-gray-50 mb-3 text-gray-800">
+            <option value="">Selecione...</option>
+            {produtos.map(p => <option key={p.id} value={p.id}>{p.nome} (Estoque: {p.quantidade_estoque})</option>)}
+          </select>
+          
+          <div className="flex gap-3 mb-4">
             <div className="w-1/3">
-              <label className="text-xs font-bold text-gray-500 uppercase">Qtd</label>
-              <input type="number" min="1" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} className="w-full p-3 border rounded-xl mt-1 text-center font-bold" />
+              <label className="text-xs font-bold text-gray-500 mb-1 block">Qtd</label>
+              <input type="number" min="1" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} className="w-full p-3 border rounded-xl bg-gray-50 text-center" />
             </div>
             <div className="w-2/3 flex items-end">
-              <button onClick={adicionarNaLista} className="w-full bg-blue-100 text-blue-700 font-bold py-3 rounded-xl border border-blue-200 active:scale-95">
-                + Adicionar Item
+              <button onClick={adicionarAoCarrinho} className="w-full bg-blue-600 text-white font-bold p-3 rounded-xl active:scale-95">
+                + Add ao Carrinho
               </button>
             </div>
           </div>
         </div>
 
-        {/* LISTA DE ITENS DA VENDA */}
-        {itensVenda.length > 0 && (
-          <div className="bg-white p-5 rounded-2xl shadow-xl border border-emerald-100">
-            <h3 className="font-bold text-gray-800 mb-3 border-b pb-2">Itens na Venda:</h3>
-            <div className="space-y-3 mb-4 max-h-48 overflow-y-auto">
-              {itensVenda.map((item, index) => (
-                <div key={index} className="flex justify-between items-center text-sm bg-gray-50 p-2 rounded-lg border">
-                  <div>
-                    <span className="font-bold text-gray-800">{item.quantidade}x</span> {item.nome}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-emerald-600">R$ {item.subtotal.toFixed(2)}</span>
-                    <button onClick={() => removerDaLista(index)} className="text-red-500 font-black">X</button>
-                  </div>
+        {carrinho.length > 0 && (
+          <div className="bg-white p-5 rounded-2xl shadow-sm border">
+            <h3 className="font-bold text-gray-800 mb-3 border-b pb-2">🛒 Carrinho</h3>
+            {carrinho.map((item, index) => (
+              <div key={index} className="flex justify-between items-center mb-2">
+                <span className="text-sm text-gray-700">{item.quantidade}x {item.nome}</span>
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-emerald-600">R$ {(item.preco_venda * item.quantidade).toFixed(2)}</span>
+                  <button onClick={() => removerDoCarrinho(index)} className="text-red-500 bg-red-50 rounded p-1 text-xs">X</button>
                 </div>
-              ))}
+              </div>
+            ))}
+            <div className="mt-4 pt-3 border-t flex justify-between items-center">
+              <span className="font-bold text-gray-500 text-sm">TOTAL:</span>
+              <span className="text-2xl font-black text-emerald-500">R$ {totalCarrinho.toFixed(2)}</span>
             </div>
-
-            <div className="flex justify-between items-center bg-gray-900 text-white p-4 rounded-xl mb-4">
-              <span className="font-bold uppercase">Total Geral:</span>
-              <span className="text-2xl font-black text-emerald-400">R$ {totalGeral.toFixed(2)}</span>
-            </div>
-
-            {/* OPÇÕES DE FINALIZAÇÃO */}
-            <div className="space-y-3 border-t pt-4">
-              <label className="flex items-center gap-2 font-bold text-gray-700">
-                <input type="checkbox" checked={isFiado} onChange={(e) => setIsFiado(e.target.checked)} className="w-5 h-5 accent-orange-500" />
-                ⚠️ Marcar como Fiado (Não foi pago)
-              </label>
-
-              {isFiado && (
-                <input type="text" placeholder="Nome do Cliente (Quem está devendo?)" value={nomeCliente} onChange={(e) => setNomeCliente(e.target.value)} className="w-full p-3 border-2 border-orange-300 rounded-xl outline-none focus:border-orange-500" />
-              )}
-
-              <button onClick={finalizarVenda} disabled={loading} className={`w-full text-white font-bold py-4 rounded-xl shadow-md active:scale-95 transition-all text-lg ${isFiado ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
-                {loading ? 'Processando...' : (isFiado ? 'Anotar no Caderno de Fiados 📝' : 'Finalizar Venda (Pago) ✅')}
-              </button>
-            </div>
+            <button onClick={finalizarVenda} disabled={salvando} className="w-full bg-emerald-500 text-white font-black p-4 rounded-xl mt-4 active:scale-95">
+              {salvando ? 'Salvando...' : 'Finalizar Venda'}
+            </button>
           </div>
         )}
-
-        {/* ALERTAS NA TELA */}
-        {erro && (
-          <div className="bg-red-100 text-red-800 p-4 rounded-xl font-bold text-sm text-center border border-red-300">
-            ⚠️ O BANCO DE DADOS RECUSOU: {erro} <br/> 
-            (Verifique se você rodou o código SQL no Supabase!)
-          </div>
-        )}
-        {sucesso && (
-          <div className="bg-emerald-100 text-emerald-800 p-4 rounded-xl font-bold text-center border border-emerald-300">
-            ✅ {sucesso}
-          </div>
-        )}
-
       </div>
       <BottomNav />
     </div>
