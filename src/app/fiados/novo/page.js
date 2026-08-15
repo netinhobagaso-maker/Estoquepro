@@ -7,7 +7,6 @@ import BottomNav from '../../../components/BottomNav';
 export default function NovoFiado() {
   const router = useRouter();
   const [nome, setNome] = useState('');
-  const [estabelecimento, setEstabelecimento] = useState(''); // <-- Novo estado aqui
   const [telefone, setTelefone] = useState('');
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
@@ -28,8 +27,8 @@ export default function NovoFiado() {
 
     const { error } = await supabase.from('fiados').insert([{
       user_id: user.id,
+      cliente: nome, // Salva no banco compatível
       nome_cliente: nome,
-      estabelecimento: estabelecimento, // <-- Enviando pro banco de dados
       telefone: telefone,
       descricao: descricao || 'Cliente cadastrado',
       valor: valorInicial,
@@ -57,12 +56,6 @@ export default function NovoFiado() {
           <div>
             <label className="text-xs font-bold text-gray-500 mb-1 block">Nome do Cliente *</label>
             <input type="text" value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: João da Silva" className="w-full p-3 border rounded-xl bg-gray-50 text-gray-800" />
-          </div>
-
-          {/* NOVO CAMPO DO ESTABELECIMENTO */}
-          <div>
-            <label className="text-xs font-bold text-gray-500 mb-1 block">Nome do Estabelecimento (Opcional)</label>
-            <input type="text" value={estabelecimento} onChange={e => setEstabelecimento(e.target.value)} placeholder="Ex: Mercearia do João" className="w-full p-3 border rounded-xl bg-gray-50 text-gray-800" />
           </div>
 
           <div>
