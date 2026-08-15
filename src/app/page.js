@@ -13,20 +13,43 @@ export default function Home() {
   const [produtoModal, setProdutoModal] = useState(null);
   const [quantidadeAdicionar, setQuantidadeAdicionar] = useState('');
   
-  // Valores financeiros
-  const [faturamento, setFaturamento] = useState(470.00);
-  const [lucro, setLucro] = useState(128.34);
-  const [estoqueTotal, setEstoqueTotal] = useState(516.30);
+  // Valores financeiros dinâmicos
+  const [faturamento, setFaturamento] = useState(0);
+  const [lucro, setLucro] = useState(0);
+  const [estoqueTotal, setEstoqueTotal] = useState(0);
 
   useEffect(() => {
-    carregarProdutos();
+    carregarDadosDinamicos();
   }, []);
 
-  const carregarProdutos = async () => {
+  const carregarDadosDinamicos = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
-      if (data) setProdutos(data);
+      // 1. Carrega Produtos e calcula Valor do Estoque e Lucro estimado
+      const { data: prodData } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
+      if (prodData) {
+        setProdutos(prodData);
+        
+        // Soma do valor total do estoque (Preço de venda * Quantidade)
+        const valorEstoque = prodData.reduce((acc, p) => acc + (Number(p.preco_venda || 0) * Number(p.quantidade_estoque || 0)), 0);
+        setEstoqueTotal(valorEstoque);
+
+        // Lucro potencial do estoque atual (Venda - Custo) * Qtd
+        const lucroEstoque = prodData.reduce((acc, p) => {
+          const custo = Number(p.preco_custo || p.custo || 0);
+          const venda = Number(p.preco_venda || 0);
+          const qtd = Number(p.quantidade_estoque || 0);
+          return acc + ((venda - custo) * qtd);
+        }, 0);
+        setLucro(lucroEstoque);
+      }
+
+      // 2. Carrega Vendas e calcula o Faturamento Total automaticamente
+      const { data: vendaData } = await supabase.from('vendas').select('total').eq('user_id', user.id);
+      if (vendaData) {
+        const totalFat = vendaData.reduce((acc, v) => acc + Number(v.total || 0), 0);
+        setFaturamento(totalFat);
+      }
     }
     setLoading(false);
   };
@@ -43,14 +66,14 @@ export default function Home() {
       alert("Estoque atualizado com sucesso!");
       setProdutoModal(null);
       setQuantidadeAdicionar('');
-      carregarProdutos();
+      carregarDadosDinamicos(); // Atualiza os valores na tela na hora!
     }
   };
 
   const apagarProduto = async (id) => {
     if (confirm("Deseja apagar este produto?")) {
       await supabase.from('produtos').delete().eq('id', id);
-      carregarProdutos();
+      carregarDadosDinamicos();
     }
   };
 
@@ -63,20 +86,20 @@ export default function Home() {
         </h1>
       </div>
 
-      {/* CARDS FINANCEIROS */}
+      {/* CARDS FINANCEIROS DINÂMICOS */}
       <div className="-mt-10 px-6 space-y-4">
         <div className="bg-white p-5 rounded-2xl shadow-md border border-gray-100">
-          <p className="text-sm text-gray-500 font-bold mb-1">Faturamento</p>
+          <p className="text-sm text-gray-500 font-bold mb-1">Faturamento Total</p>
           <h2 className="text-4xl font-black text-[#10b981]">R$ {faturamento.toFixed(2)}</h2>
         </div>
         
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-2xl shadow-md border border-gray-100">
-            <p className="text-[11px] text-gray-500 font-bold mb-1">Lucro</p>
+            <p className="text-[11px] text-gray-500 font-bold mb-1">Lucro Estimado</p>
             <h2 className="text-xl font-black text-blue-600">R$ {lucro.toFixed(2)}</h2>
           </div>
           <div className="bg-white p-4 rounded-2xl shadow-md border border-gray-100">
-            <p className="text-[11px] text-gray-500 font-bold mb-1">Estoque</p>
+            <p className="text-[11px] text-gray-500 font-bold mb-1">Valor em Estoque</p>
             <h2 className="text-xl font-black text-red-500">R$ {estoqueTotal.toFixed(2)}</h2>
           </div>
         </div>
@@ -159,7 +182,7 @@ export default function Home() {
               className="w-full p-4 border-2 border-gray-100 rounded-xl mb-6 text-lg bg-gray-50 focus:outline-none focus:border-[#10b981]"
             />
             
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <button onClick={() => setProdutoModal(null)} className="flex-1 bg-gray-100 text-gray-600 font-bold p-4 rounded-xl active:scale-95">
                 Cancelar
               </button>
