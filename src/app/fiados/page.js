@@ -52,13 +52,18 @@ export default function Fiados() {
     setNovoValor('');
   };
 
-  // AQUI ESTÁ A CORREÇÃO PRINCIPAL
   const adicionarConta = async (fiado) => {
     if (!novaDescricao || !novoValor) return alert("Preencha item e valor.");
     
-    const valorAdicional = Number(novoValor);
+    // TRATAMENTO ANTI-ERRO (Converte vírgula para ponto e protege o cálculo)
+    const valorTratado = String(novoValor).replace(',', '.');
+    const valorAdicional = Number(valorTratado);
+
+    if (isNaN(valorAdicional) || valorAdicional <= 0) {
+      return alert("Por favor, insira um valor numérico válido (ex: 10.50).");
+    }
     
-    // Se o status estiver pago, o valor atual que conta para a soma é 0.
+    // Se estava pago, zera a conta antiga e soma a nova.
     const valorAtual = fiado.status === 'pago' ? 0 : Number(fiado.valor || 0);
     const novoTotal = valorAtual + valorAdicional;
     
@@ -66,10 +71,11 @@ export default function Fiados() {
     const itemNovo = { data: new Date().toISOString(), desc: novaDescricao, val: valorAdicional };
     const novoHistorico = [...historicoAtual, itemNovo];
 
+    // Força o envio do status pendente
     const { error } = await supabase.from('fiados')
       .update({ 
         valor: novoTotal, 
-        status: 'pendente', // Volta para devendo
+        status: 'pendente', 
         historico: novoHistorico 
       })
       .eq('id', fiado.id);
@@ -79,23 +85,27 @@ export default function Fiados() {
       setNovaDescricao('');
       setNovoValor('');
       carregarDados();
+    } else {
+      alert("Erro ao salvar: " + error.message);
     }
   };
 
   const pagarEEnviarComprovante = async (fiado) => {
-    if (!fiado.telefone) return alert("Este cliente não tem telefone cadastrado.");
-
     const lojaFinal = nomeLoja || 'Meu Comércio';
     const valorPago = Number(fiado.valor).toFixed(2);
-    const mensagem = `Olá *${fiado.nome_cliente}*! 👋\nAqui é da *${lojaFinal}*.\n\nPassando para confirmar que o seu fiado de *R$ ${valorPago}* foi quitado com sucesso! ✅\n\nMuito obrigado! ✨`;
-    const linkWhatsApp = `https://wa.me/55${fiado.telefone.replace(/\D/g, '')}?text=${encodeURIComponent(mensagem)}`;
-
+    
     const { error } = await supabase.from('fiados')
       .update({ valor: 0, status: 'pago' })
       .eq('id', fiado.id);
 
     if (!error) {
-      window.open(linkWhatsApp, '_blank');
+      if (fiado.telefone) {
+        const mensagem = `Olá *${fiado.nome_cliente}*! 👋\nAqui é da *${lojaFinal}*.\n\nPassando para confirmar que o seu fiado de *R$ ${valorPago}* foi quitado com sucesso! ✅\n\nMuito obrigado! ✨`;
+        const linkWhatsApp = `https://wa.me/55${fiado.telefone.replace(/\D/g, '')}?text=${encodeURIComponent(mensagem)}`;
+        window.open(linkWhatsApp, '_blank');
+      } else {
+        alert("Conta paga com sucesso! (Cliente sem telefone cadastrado).");
+      }
       carregarDados();
     }
   };
@@ -140,7 +150,8 @@ export default function Fiados() {
 
       <div className="px-6 mt-6 space-y-4">
         {fiados.map(fiado => {
-          const estaPago = fiado.status === 'pago';
+          // AUI GARANTE QUE SÓ É PAGO SE O VALOR FOR MENOR OU IGUAL A ZERO E O STATUS FOR PAGO
+          const estaPago = fiado.status === 'pago' || Number(fiado.valor) <= 0;
 
           return (
             <div key={fiado.id} className={`bg-white rounded-2xl shadow-sm border ${estaPago ? 'border-emerald-300' : 'border-gray-100'} overflow-hidden`}>
@@ -167,7 +178,7 @@ export default function Fiados() {
                     <p className="text-xs font-bold text-gray-800 mb-3">Adicionar na conta:</p>
                     <div className="flex gap-2">
                       <input type="text" placeholder="Item" value={novaDescricao} onChange={e => setNovaDescricao(e.target.value)} className="w-full p-3 border rounded-xl bg-gray-50 text-sm" />
-                      <input type="number" placeholder="R$" value={novoValor} onChange={e => setNovoValor(e.target.value)} className="w-24 p-3 border rounded-xl bg-gray-50 text-sm" />
+                      <input type="text" placeholder="R$" value={novoValor} onChange={e => setNovoValor(e.target.value)} className="w-24 p-3 border rounded-xl bg-gray-50 text-sm" />
                     </div>
                     <button onClick={() => adicionarConta(fiado)} className="w-full mt-3 bg-blue-600 text-white font-bold p-3 rounded-xl text-sm active:scale-95 shadow-md">
                       ➕ Somar na Conta
