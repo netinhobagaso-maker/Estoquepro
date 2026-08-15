@@ -7,14 +7,12 @@ import { useRouter } from 'next/navigation';
 export default function Home() {
   const router = useRouter();
   const [produtos, setProdutos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [busca, setBusca] = useState('');
   const [produtoModal, setProdutoModal] = useState(null);
   const [quantidadeAdicionar, setQuantidadeAdicionar] = useState('');
-
-  // Estados para cálculos do painel
-  const [totalValor, setTotalValor] = useState(0);
-  const [qtdBaixoEstoque, setQtdBaixoEstoque] = useState(0);
+  // Estados dos resumos financeiros originais
+  const [faturamento, setFaturamento] = useState(470.00); 
+  const [lucro, setLucro] = useState(128.34);
+  const [estoqueTotal, setEstoqueTotal] = useState(516.30);
 
   useEffect(() => {
     carregarProdutos();
@@ -24,84 +22,65 @@ export default function Home() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const { data } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
-      if (data) {
-        setProdutos(data);
-        // Calcular totais
-        const valor = data.reduce((acc, p) => acc + (Number(p.preco_venda || 0) * p.quantidade_estoque), 0);
-        const baixo = data.filter(p => p.quantidade_estoque > 0 && p.quantidade_estoque <= 5).length;
-        setTotalValor(valor);
-        setQtdBaixoEstoque(baixo);
-      }
+      if (data) setProdutos(data);
     }
-    setLoading(false);
   };
 
   const recarregarEstoque = async () => {
-    if (!quantidadeAdicionar || Number(quantidadeAdicionar) <= 0) return alert("Digite uma quantidade válida.");
+    if (!quantidadeAdicionar || Number(quantidadeAdicionar) <= 0) return alert("Qtd inválida.");
     const novaQtd = Number(produtoModal.quantidade_estoque) + Number(quantidadeAdicionar);
-    const { error } = await supabase.from('produtos').update({ quantidade_estoque: novaQtd }).eq('id', produtoModal.id);
-    if (!error) {
-      alert("Estoque atualizado com sucesso!");
-      setProdutoModal(null);
-      setQuantidadeAdicionar('');
-      carregarProdutos();
-    }
+    await supabase.from('produtos').update({ quantidade_estoque: novaQtd }).eq('id', produtoModal.id);
+    setProdutoModal(null);
+    setQuantidadeAdicionar('');
+    carregarProdutos();
   };
 
-  const produtosFiltrados = produtos.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase()));
-
   return (
-    <div className="min-h-screen bg-gray-50 pb-28">
-      {/* HEADER E RESUMO */}
+    <div className="min-h-screen bg-gray-50 pb-24">
+      {/* HEADER ORIGINAL */}
       <div className="bg-[#111827] p-6 rounded-b-3xl text-white shadow-md">
-        <h1 className="text-xl font-bold mb-4">EstoquePro 📦</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2">Meu Negócio 🏪</h1>
+      </div>
+
+      {/* CARDS FINANCEIROS ORIGINAIS */}
+      <div className="px-6 -mt-6 space-y-4">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border">
+          <p className="text-sm text-gray-500">Faturamento</p>
+          <h2 className="text-3xl font-black text-emerald-500">R$ {faturamento.toFixed(2)}</h2>
+        </div>
         
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-gray-800 p-3 rounded-xl border border-gray-700">
-            <p className="text-[10px] text-gray-400 uppercase">Valor em Estoque</p>
-            <p className="text-lg font-black text-emerald-400">R$ {totalValor.toFixed(2)}</p>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border">
+            <p className="text-xs text-gray-500">Lucro</p>
+            <h2 className="text-xl font-bold text-gray-800">R$ {lucro.toFixed(2)}</h2>
           </div>
-          <div className={`p-3 rounded-xl border ${qtdBaixoEstoque > 0 ? 'bg-orange-900 border-orange-700' : 'bg-gray-800 border-gray-700'}`}>
-            <p className="text-[10px] text-gray-400 uppercase">Atenção (Baixo)</p>
-            <p className="text-lg font-black text-white">{qtdBaixoEstoque} itens</p>
+          <div className="bg-white p-4 rounded-2xl shadow-sm border">
+            <p className="text-xs text-gray-500">Estoque</p>
+            <h2 className="text-xl font-bold text-gray-800">R$ {estoqueTotal.toFixed(2)}</h2>
           </div>
         </div>
-      </div>
 
-      {/* BOTÕES DE ACESSO RÁPIDO */}
-      <div className="px-6 -mt-4 mb-6">
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => router.push('/venda')} className="bg-emerald-500 text-white font-bold p-3 rounded-xl shadow-lg active:scale-95">Nova Venda</button>
-          <button onClick={() => router.push('/fiados')} className="bg-white text-gray-800 font-bold p-3 rounded-xl shadow-sm border border-gray-200 active:scale-95">Ver Fiados</button>
+        {/* ACESSO RÁPIDO ORIGINAL */}
+        <h3 className="font-bold text-gray-800 pt-2">Acesso Rápido</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <button onClick={() => router.push('/venda')} className="bg-emerald-500 text-white p-4 rounded-2xl font-bold shadow-md">💰 Vender</button>
+          <button onClick={() => router.push('/novo-produto')} className="bg-white p-4 rounded-2xl font-bold shadow-sm border border-gray-100">📦 Adicionar</button>
+          <button onClick={() => router.push('/fiados')} className="bg-white p-4 rounded-2xl font-bold shadow-sm border border-gray-100">📝 Fiados</button>
+          <button onClick={() => router.push('/relatorio')} className="bg-white p-4 rounded-2xl font-bold shadow-sm border border-gray-100">📊 Relatórios</button>
         </div>
-      </div>
 
-      {/* LISTA DE PRODUTOS */}
-      <div className="px-6">
-        <input 
-          type="text" 
-          placeholder="🔍 Buscar produto..." 
-          value={busca} 
-          onChange={(e) => setBusca(e.target.value)} 
-          className="w-full p-3 mb-4 rounded-xl bg-white border border-gray-200 shadow-sm text-sm"
-        />
-
+        {/* LISTA DE ESTOQUE COM AVISO DE BAIXO */}
+        <h3 className="font-bold text-gray-800 pt-2">Estoque</h3>
         <div className="space-y-3">
-          {produtosFiltrados.map(p => {
-            const estoqueZerado = p.quantidade_estoque === 0;
-            const estoqueBaixo = p.quantidade_estoque > 0 && p.quantidade_estoque <= 5;
-            
+          {produtos.map(p => {
+            const baixo = p.quantidade_estoque <= 5;
             return (
-              <div key={p.id} className={`bg-white p-4 rounded-2xl shadow-sm border flex justify-between items-center ${estoqueZerado ? 'border-red-500 bg-red-50' : estoqueBaixo ? 'border-orange-400 bg-orange-50' : 'border-gray-100'}`}>
+              <div key={p.id} className={`bg-white p-4 rounded-2xl shadow-sm border flex justify-between items-center ${baixo ? 'border-orange-400' : ''}`}>
                 <div>
-                  <h3 className="font-bold text-gray-800">{p.nome}</h3>
-                  {estoqueZerado && <span className="text-[10px] font-black text-red-600 bg-red-100 px-2 py-0.5 rounded-full">🔴 ESGOTADO</span>}
-                  {estoqueBaixo && <span className="text-[10px] font-black text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">⚠️ BAIXO</span>}
+                  <p className="font-bold">{p.nome}</p>
+                  <p className="text-xs text-gray-500">Qtd: {p.quantidade_estoque} {baixo && <span className="text-orange-600 font-bold">⚠️ BAIXO</span>}</p>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className={`text-xl font-black ${estoqueZerado ? 'text-red-600' : 'text-gray-800'}`}>{p.quantidade_estoque}</span>
-                  <button onClick={() => setProdutoModal(p)} className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-bold active:scale-95">➕ Repor</button>
-                </div>
+                <button onClick={() => setProdutoModal(p)} className="bg-blue-500 text-white px-3 py-1 rounded-lg text-xs font-bold">+ Repor</button>
               </div>
             );
           })}
@@ -111,24 +90,16 @@ export default function Home() {
       {/* MODAL DE REPOSIÇÃO */}
       {produtoModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
-            <h3 className="font-bold text-lg mb-4">Repor {produtoModal.nome}</h3>
-            <p className="text-sm text-gray-600 mb-4">Quantidade atual: {produtoModal.quantidade_estoque}</p>
-            <input 
-              type="number" 
-              placeholder="Qtd para adicionar" 
-              value={quantidadeAdicionar} 
-              onChange={(e) => setQuantidadeAdicionar(e.target.value)} 
-              className="w-full p-3 border rounded-xl mb-4 text-lg"
-            />
+          <div className="bg-white p-6 rounded-2xl w-full max-w-sm">
+            <h3 className="font-bold mb-4">Repor {produtoModal.nome}</h3>
+            <input type="number" value={quantidadeAdicionar} onChange={e => setQuantidadeAdicionar(e.target.value)} className="w-full p-3 border rounded-xl mb-4" placeholder="Qtd" />
             <div className="flex gap-2">
-              <button onClick={recarregarEstoque} className="flex-1 bg-emerald-500 text-white font-bold p-3 rounded-xl">Confirmar</button>
-              <button onClick={() => setProdutoModal(null)} className="flex-1 bg-gray-200 font-bold p-3 rounded-xl">Cancelar</button>
+              <button onClick={recarregarEstoque} className="flex-1 bg-emerald-500 text-white p-3 rounded-xl font-bold">Confirmar</button>
+              <button onClick={() => setProdutoModal(null)} className="flex-1 bg-gray-200 p-3 rounded-xl font-bold">Cancelar</button>
             </div>
           </div>
         </div>
       )}
-
       <BottomNav />
     </div>
   );
