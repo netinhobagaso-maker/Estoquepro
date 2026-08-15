@@ -1,204 +1,217 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useRouter } from 'next/navigation';
 import BottomNav from '../../components/BottomNav';
+import { useRouter } from 'next/navigation';
 
-export default function Vender() {
+export default function Venda() {
   const router = useRouter();
   const [produtos, setProdutos] = useState([]);
-  const [clientesFiado, setClientesFiado] = useState([]); 
   const [carrinho, setCarrinho] = useState([]);
-  const [produtoSelecionado, setProdutoSelecionado] = useState('');
-  const [quantidade, setQuantidade] = useState(1);
-  const [salvando, setSalvando] = useState(false);
+  const [busca, setBusca] = useState('');
   
-  const [tipoPagamento, setTipoPagamento] = useState('pago'); 
+  // Controles do Fiado Automático
+  const [modalFiado, setModalFiado] = useState(false);
+  const [clientesFiado, setClientesFiado] = useState([]);
   const [clienteSelecionado, setClienteSelecionado] = useState('');
+  const [novoClienteNome, setNovoClienteNome] = useState('');
 
   useEffect(() => {
-    carregarDados();
+    carregarProdutos();
+    carregarClientesFiado();
   }, []);
 
-  const carregarDados = async () => {
+  const carregarProdutos = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data: prods } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
-      if (prods) setProdutos(prods);
-      
-      const { data: clientes } = await supabase.from('fiados').select('id, nome_cliente, historico, valor').eq('user_id', user.id).order('nome_cliente');
-      if (clientes) setClientesFiado(clientes);
+      const { data } = await supabase.from('produtos').select('*').eq('user_id', user.id).gt('quantidade_estoque', 0).order('nome');
+      if (data) setProdutos(data);
     }
   };
 
-  const adicionarAoCarrinho = () => {
-    if (!produtoSelecionado || quantidade < 1) return;
-    const prod = produtos.find(p => p.id === produtoSelecionado);
-    if (!prod) return;
-
-    if (prod.quantidade_estoque < quantidade) {
-      alert(`Você só tem ${prod.quantidade_estoque} unidades de ${prod.nome} no estoque!`);
-      return;
+  const carregarClientesFiado = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase.from('fiados').select('*').eq('user_id', user.id).order('nome_cliente');
+      if (data) setClientesFiado(data);
     }
-
-    const itemNovo = {
-      id: prod.id,
-      nome: prod.nome,
-      preco_venda: prod.preco_venda,
-      custo_aquisicao: prod.custo_aquisicao,
-      quantidade: Number(quantidade)
-    };
-
-    setCarrinho([...carrinho, itemNovo]);
-    setProdutoSelecionado('');
-    setQuantidade(1);
   };
 
-  const removerDoCarrinho = (index) => {
-    const novoCarrinho = [...carrinho];
-    novoCarrinho.splice(index, 1);
-    setCarrinho(novoCarrinho);
+  const adicionarAoCarrinho = (produto) => {
+    const itemExistente = carrinho.find(item => item.id === produto.id);
+    if (itemExistente) {
+      if (itemExistente.quantidade >= produto.quantidade_estoque) return alert("Estoque insuficiente!");
+      setCarrinho(carrinho.map(item => item.id === produto.id ? { ...item, quantidade: item.quantidade + 1 } : item));
+    } else {
+      setCarrinho([...carrinho, { ...produto, quantidade: 1 }]);
+    }
   };
 
-  const finalizarVenda = async () => {
-    if (carrinho.length === 0) return alert("O carrinho está vazio!");
-    
-    if (tipoPagamento === 'fiado' && !clienteSelecionado) {
-      return alert("Você escolheu Fiado. Por favor, selecione o Cliente na lista!");
-    }
+  const removerDoCarrinho = (id) => {
+    setCarrinho(carrinho.filter(item => item.id !== id));
+  };
 
-    setSalvando(true);
+  const totalCarrinho = carrinho.reduce((acc, item) => acc + (Number(item.preco_venda) * item.quantidade), 0);
+
+  // Venda Comum (Dinheiro, Cartão, Pix)
+  const finalizarVenda = async (formaPagamento = 'Dinheiro') => {
+    if (carrinho.length === 0) return alert("Carrinho vazio!");
     const { data: { user } } = await supabase.auth.getUser();
     
-    let valorTotal = 0;
-    let lucroTotal = 0;
+    for (const item of carrinho) {
+      const novoEstoque = item.quantidade_estoque - item.quantidade;
+      await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
+    }
 
-    carrinho.forEach(item => {
-      valorTotal += item.preco_venda * item.quantidade;
-      lucroTotal += (item.preco_venda - item.custo_aquisicao) * item.quantidade;
+    const { error } = await supabase.from('vendas').insert({
+      user_id: user.id, total: totalCarrinho, itens: carrinho, forma_pagamento: formaPagamento
     });
 
-    const { error: erroVenda } = await supabase.from('vendas').insert([{
-      user_id: user.id,
-      valor_total: valorTotal,
-      lucro_realizado: lucroTotal,
-      itens: carrinho,
-      nome_produto: tipoPagamento === 'fiado' ? '[FIADO]' : '[PAGO]'
-    }]);
-
-    if (erroVenda) {
-      alert("Erro ao vender: " + erroVenda.message);
-      setSalvando(false);
-      return;
+    if (!error) {
+      alert("Venda finalizada com sucesso!");
+      setCarrinho([]);
+      carregarProdutos();
     }
-
-    for (const item of carrinho) {
-      const prodBanco = produtos.find(p => p.id === item.id);
-      await supabase.from('produtos').update({
-        quantidade_estoque: prodBanco.quantidade_estoque - item.quantidade
-      }).eq('id', item.id);
-    }
-
-    if (tipoPagamento === 'fiado') {
-      const cliente = clientesFiado.find(c => c.id === clienteSelecionado);
-      const resumoItens = carrinho.map(c => `${c.quantidade}x ${c.nome}`).join(' + ');
-      
-      const itemHistorico = {
-        data: new Date().toISOString(),
-        desc: resumoItens,
-        val: valorTotal
-      };
-      
-      const novoHistorico = [...(cliente.historico || []), itemHistorico];
-      const novoTotal = Number(cliente.valor) + valorTotal;
-
-      await supabase.from('fiados').update({
-        valor: novoTotal,
-        historico: novoHistorico
-      }).eq('id', cliente.id);
-    }
-
-    alert(tipoPagamento === 'fiado' ? "Venda enviada para o Fiado com sucesso!" : "Venda finalizada com sucesso!");
-    router.push('/');
   };
 
-  const totalCarrinho = carrinho.reduce((acc, item) => acc + (item.preco_venda * item.quantidade), 0);
+  // Venda Fiado - ENVIO AUTOMÁTICO
+  const finalizarVendaFiado = async () => {
+    if (!clienteSelecionado && !novoClienteNome) return alert("Selecione ou digite o nome do cliente.");
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // Transforma o carrinho em texto. Ex: "2x Coca, 1x Bolacha"
+    const descItens = carrinho.map(item => `${item.quantidade}x ${item.nome}`).join(', ');
+    
+    let clienteId = clienteSelecionado;
+    
+    // Se for cliente novo, cria ele primeiro
+    if (clienteId === 'novo') {
+      const { data: novoCliente, error } = await supabase.from('fiados').insert({
+        user_id: user.id, nome_cliente: novoClienteNome, valor: totalCarrinho, status: 'pendente',
+        historico: [{ data: new Date().toISOString(), desc: descItens, val: totalCarrinho }]
+      }).select().single();
+      
+      if (error) return alert("Erro ao criar cliente.");
+      clienteId = novoCliente.id;
+    } else {
+      // Se já existe, pega a ficha dele e insere a compra
+      const clienteData = clientesFiado.find(c => c.id === clienteId);
+      const historicoAtual = clienteData.status === 'pago' ? [] : (clienteData.historico || []);
+      const novoHistorico = [...historicoAtual, { data: new Date().toISOString(), desc: descItens, val: totalCarrinho }];
+      const novoValor = (clienteData.status === 'pago' ? 0 : Number(clienteData.valor)) + totalCarrinho;
+      
+      await supabase.from('fiados').update({ valor: novoValor, status: 'pendente', historico: novoHistorico }).eq('id', clienteId);
+    }
+
+    // Desconta o estoque normalmente
+    for (const item of carrinho) {
+      const novoEstoque = item.quantidade_estoque - item.quantidade;
+      await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
+    }
+
+    // Salva a venda para aparecer no relatório de lucro
+    await supabase.from('vendas').insert({
+      user_id: user.id, total: totalCarrinho, itens: carrinho, forma_pagamento: 'Fiado'
+    });
+
+    alert("MÁGICA FEITA! Fatura do cliente atualizada e venda salva com sucesso!");
+    setModalFiado(false);
+    setCarrinho([]);
+    setClienteSelecionado('');
+    setNovoClienteNome('');
+    carregarProdutos();
+    carregarClientesFiado();
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-28">
-      <div className="bg-[#111827] p-6 rounded-b-3xl text-white shadow-md">
-        <h1 className="text-2xl font-bold">Nova Venda 💰</h1>
+    <div className="min-h-screen bg-gray-50 pb-24">
+      <div className="bg-[#111827] pt-8 pb-6 px-6 text-white rounded-b-[2rem] shadow-md">
+        <h1 className="text-2xl font-bold mb-4">🛒 Nova Venda</h1>
+        <input type="text" placeholder="Buscar produto..." value={busca} onChange={(e) => setBusca(e.target.value)} className="w-full p-3 rounded-xl bg-gray-800 text-white placeholder-gray-400 border border-gray-700 outline-none focus:border-[#10b981]" />
       </div>
-      <div className="p-6 -mt-4 space-y-4">
-        
-        <div className="bg-white p-5 rounded-2xl shadow-sm border">
-          <label className="text-xs font-bold text-gray-500 mb-1 block">Escolha o Produto</label>
-          <select value={produtoSelecionado} onChange={(e) => setProdutoSelecionado(e.target.value)} className="w-full p-3 border rounded-xl bg-gray-50 mb-3 text-gray-800">
-            <option value="">Selecione...</option>
-            {produtos.map(p => <option key={p.id} value={p.id}>{p.nome} (Estoque: {p.quantidade_estoque})</option>)}
-          </select>
-          
-          <div className="flex gap-3 mb-4">
-            <div className="w-1/3">
-              <label className="text-xs font-bold text-gray-500 mb-1 block">Qtd</label>
-              <input type="number" min="1" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} className="w-full p-3 border rounded-xl bg-gray-50 text-center text-gray-800" />
-            </div>
-            <div className="w-2/3 flex items-end">
-              <button onClick={adicionarAoCarrinho} className="w-full bg-blue-600 text-white font-bold p-3 rounded-xl active:scale-95">
-                + Add Carrinho
-              </button>
-            </div>
+
+      <div className="px-6 mt-6 grid grid-cols-1 gap-6">
+        <div>
+          <h2 className="font-bold text-gray-800 mb-3">Toque para vender:</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {produtos.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase())).map(produto => (
+              <div key={produto.id} onClick={() => adicionarAoCarrinho(produto)} className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 active:scale-95 transition-transform cursor-pointer">
+                <p className="font-bold text-gray-800 text-sm truncate">{produto.nome}</p>
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-[#10b981] font-black">R$ {Number(produto.preco_venda).toFixed(2)}</span>
+                  <span className="text-[10px] bg-gray-100 px-2 py-1 rounded text-gray-500 font-bold">{produto.quantidade_estoque} un.</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
         {carrinho.length > 0 && (
-          <div className="bg-white p-5 rounded-2xl shadow-sm border">
-            <h3 className="font-bold text-gray-800 mb-3 border-b pb-2">🛒 Carrinho</h3>
-            {carrinho.map((item, index) => (
-              <div key={index} className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-700">{item.quantidade}x {item.nome}</span>
-                <div className="flex items-center gap-3">
-                  <span className="font-bold text-emerald-600">R$ {(item.preco_venda * item.quantidade).toFixed(2)}</span>
-                  <button onClick={() => removerDoCarrinho(index)} className="text-red-500 bg-red-50 rounded p-1 text-xs">X</button>
+          <div className="bg-white p-5 rounded-2xl shadow-lg border border-[#10b981]">
+            <h2 className="font-black text-gray-800 mb-4 border-b pb-2">🛒 Seu Carrinho</h2>
+            <div className="space-y-3 mb-4">
+              {carrinho.map(item => (
+                <div key={item.id} className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-gray-100 w-6 h-6 flex items-center justify-center rounded text-xs font-bold">{item.quantidade}x</span>
+                    <span className="text-sm font-semibold text-gray-700 truncate w-32">{item.nome}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold">R$ {(item.preco_venda * item.quantidade).toFixed(2)}</span>
+                    <button onClick={() => removerDoCarrinho(item.id)} className="text-red-500 font-black text-lg p-1">×</button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
             
-            <div className="mt-4 pt-3 border-t flex justify-between items-center mb-6">
-              <span className="font-bold text-gray-500 text-sm">TOTAL:</span>
-              <span className="text-2xl font-black text-emerald-500">R$ {totalCarrinho.toFixed(2)}</span>
+            <div className="flex justify-between items-center bg-gray-50 p-3 rounded-xl mb-4">
+              <span className="font-bold text-gray-600 uppercase text-xs">Total:</span>
+              <span className="font-black text-2xl text-[#10b981]">R$ {totalCarrinho.toFixed(2)}</span>
             </div>
 
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-4">
-              <p className="text-xs font-bold text-gray-600 mb-2">Como o cliente vai pagar?</p>
-              <div className="flex gap-2 mb-3">
-                <button onClick={() => setTipoPagamento('pago')} className={`flex-1 p-2 text-sm font-bold rounded-lg border ${tipoPagamento === 'pago' ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-white text-gray-500'}`}>
-                  💵 Na Hora
-                </button>
-                <button onClick={() => setTipoPagamento('fiado')} className={`flex-1 p-2 text-sm font-bold rounded-lg border ${tipoPagamento === 'fiado' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-500'}`}>
-                  📝 Fiado
-                </button>
-              </div>
-
-              {tipoPagamento === 'fiado' && (
-                <div>
-                  <select value={clienteSelecionado} onChange={(e) => setClienteSelecionado(e.target.value)} className="w-full p-3 border rounded-xl bg-white text-gray-800 text-sm">
-                    <option value="">Selecione o Cliente...</option>
-                    {clientesFiado.map(c => <option key={c.id} value={c.id}>{c.nome_cliente}</option>)}
-                  </select>
-                  {clientesFiado.length === 0 && (
-                    <p className="text-xs text-red-500 mt-1">Você não tem clientes cadastrados no Fiado.</p>
-                  )}
-                </div>
-              )}
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => finalizarVenda('Dinheiro')} className="bg-[#10b981] text-white p-3 rounded-xl font-bold shadow-md active:scale-95 text-sm">
+                💵 Receber
+              </button>
+              <button onClick={() => setModalFiado(true)} className="bg-blue-600 text-white p-3 rounded-xl font-bold shadow-md active:scale-95 text-sm">
+                📝 Pendurar (Fiado)
+              </button>
             </div>
-
-            <button onClick={finalizarVenda} disabled={salvando} className={`w-full text-white font-black p-4 rounded-xl active:scale-95 transition-all ${tipoPagamento === 'fiado' ? 'bg-orange-500' : 'bg-emerald-500'}`}>
-              {salvando ? 'Salvando...' : (tipoPagamento === 'fiado' ? 'Pendurar na Conta' : 'Finalizar Venda')}
-            </button>
           </div>
         )}
       </div>
+
+      {modalFiado && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="font-black text-xl mb-1 text-gray-800">Finalizar no Fiado</h3>
+            <p className="text-sm text-gray-500 mb-5">Valor a pendurar: <span className="font-bold text-[#10b981]">R$ {totalCarrinho.toFixed(2)}</span></p>
+            
+            <label className="text-xs font-bold text-gray-600 block mb-2">Qual o cliente?</label>
+            <select 
+              className="w-full p-3 border-2 border-gray-100 rounded-xl mb-4 text-sm bg-gray-50 outline-none focus:border-blue-500"
+              value={clienteSelecionado}
+              onChange={(e) => setClienteSelecionado(e.target.value)}
+            >
+              <option value="" disabled>Selecione um cliente...</option>
+              <option value="novo">➕ Cadastrar Novo Cliente</option>
+              {clientesFiado.map(c => (
+                <option key={c.id} value={c.id}>{c.nome_cliente}</option>
+              ))}
+            </select>
+
+            {clienteSelecionado === 'novo' && (
+              <input type="text" placeholder="Digite o nome dele..." value={novoClienteNome} onChange={(e) => setNovoClienteNome(e.target.value)} className="w-full p-3 border-2 border-gray-100 rounded-xl mb-6 text-sm bg-gray-50 outline-none focus:border-blue-500" />
+            )}
+            
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setModalFiado(false)} className="flex-1 bg-gray-100 text-gray-600 font-bold p-3 rounded-xl active:scale-95">Cancelar</button>
+              <button onClick={finalizarVendaFiado} className="flex-1 bg-blue-600 text-white font-black p-3 rounded-xl active:scale-95 shadow-md">Confirmar Fiado</button>
+            </div>
+          </div>
+        </div>
+      )}
       <BottomNav />
     </div>
   );
