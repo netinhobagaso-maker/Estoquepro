@@ -9,11 +9,9 @@ export default function Home() {
   const [produtos, setProdutos] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Estados para o Modal de Reposição
   const [produtoModal, setProdutoModal] = useState(null);
   const [quantidadeAdicionar, setQuantidadeAdicionar] = useState('');
   
-  // Valores financeiros
   const [faturamento, setFaturamento] = useState(0);
   const [lucro, setLucro] = useState(0);
   const [estoqueTotal, setEstoqueTotal] = useState(0);
@@ -25,7 +23,7 @@ export default function Home() {
   const carregarDadosDinamicos = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      // 1. Carrega Produtos (para saber os custos e valor do estoque)
+      // 1. Carrega Produtos
       const { data: prodData } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
       
       const custosProdutos = {};
@@ -33,18 +31,14 @@ export default function Home() {
 
       if (prodData) {
         setProdutos(prodData);
-        
         prodData.forEach(p => {
-          // Guarda o custo de cada produto em um mapa para calcular o lucro das vendas
           custosProdutos[p.id] = Number(p.preco_custo || p.custo || 0);
-          // Valor total do estoque atual
           valorEstoque += Number(p.preco_venda || 0) * Number(p.quantidade_estoque || 0);
         });
-        
         setEstoqueTotal(valorEstoque);
       }
 
-      // 2. Carrega Vendas para calcular o Faturamento e o Lucro REAL obtido nas vendas
+      // 2. Carrega Vendas contornando o erro de NaN
       const { data: vendaData } = await supabase.from('vendas').select('*').eq('user_id', user.id);
       
       if (vendaData) {
@@ -52,16 +46,26 @@ export default function Home() {
         let lucroRealVendas = 0;
 
         vendaData.forEach(v => {
-          totalFat += Number(v.total || 0);
+          const valorDaVenda = Number(v.total || v.valor_total || 0);
+          
+          // Se o valor não for um erro NaN, ele soma no faturamento
+          if (!isNaN(valorDaVenda)) {
+            totalFat += valorDaVenda;
+          }
 
-          // Se a venda tem itens, calcula o lucro exato (Preço de Venda - Custo de cada item)
           if (v.itens && Array.isArray(v.itens)) {
             v.itens.forEach(item => {
-              const precoVendaItem = Number(item.preco || 0);
-              const qtdItem = Number(item.quantidade || 0);
-              const custoUnitario = custosProdutos[item.produto_id] !== undefined ? custosProdutos[item.produto_id] : Number(item.custo || 0);
+              const precoVendaItem = Number(item.preco_venda || item.preco || 0);
+              const qtdItem = Number(item.quantidade || 1);
               
-              lucroRealVendas += (precoVendaItem - custoUnitario) * qtdItem;
+              // Busca o ID correto para achar o custo
+              const idDoProduto = item.produto_id || item.id;
+              const custoUnitario = custosProdutos[idDoProduto] !== undefined ? custosProdutos[idDoProduto] : Number(item.custo || 0);
+              
+              // Se os números estiverem certinhos, ele calcula o lucro daquela venda
+              if (!isNaN(precoVendaItem) && !isNaN(custoUnitario)) {
+                lucroRealVendas += (precoVendaItem - custoUnitario) * qtdItem;
+              }
             });
           }
         });
@@ -98,14 +102,12 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      {/* CABEÇALHO AZUL ESCURO */}
       <div className="bg-[#111827] pt-8 pb-14 px-6 rounded-b-[2rem]">
         <h1 className="text-white text-2xl font-bold flex items-center gap-2">
           Meu Negócio 🏪
         </h1>
       </div>
 
-      {/* CARDS FINANCEIROS */}
       <div className="-mt-10 px-6 space-y-4">
         <div className="bg-white p-5 rounded-2xl shadow-md border border-gray-100">
           <p className="text-sm text-gray-500 font-bold mb-1">Faturamento Total</p>
@@ -124,7 +126,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ACESSO RÁPIDO */}
       <div className="px-6 mt-8">
         <h3 className="font-bold text-gray-800 text-lg mb-4">Acesso Rápido</h3>
         <div className="grid grid-cols-2 gap-4">
@@ -150,7 +151,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ESTOQUE */}
       <div className="px-6 mt-8">
         <h3 className="font-bold text-gray-800 text-lg mb-4">Estoque</h3>
         
@@ -186,7 +186,6 @@ export default function Home() {
         )}
       </div>
 
-      {/* MODAL DE REPOSIÇÃO */}
       {produtoModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
