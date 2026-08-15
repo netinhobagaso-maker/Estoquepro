@@ -23,7 +23,6 @@ export default function Home() {
   const carregarDadosDinamicos = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      // 1. Carrega Produtos
       const { data: prodData } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
       
       const custosProdutos = {};
@@ -32,14 +31,14 @@ export default function Home() {
       if (prodData) {
         setProdutos(prodData);
         prodData.forEach(p => {
-          // Salva o preço de custo para usar no cálculo do lucro
-          custosProdutos[p.id] = Number(p.preco_custo || p.custo || 0);
-          valorEstoque += Number(p.preco_venda || 0) * Number(p.quantidade_estoque || 0);
+          // BLINDAGEM: Procura o custo por todos os nomes possíveis que possam estar no seu banco
+          const custoDoProduto = Number(p.preco_custo || p.custo_unitario || p.custo || p.custo_unidade || p.valor_custo || 0);
+          custosProdutos[p.id] = custoDoProduto;
+          valorEstoque += Number(p.preco_venda || p.preco || 0) * Number(p.quantidade_estoque || 0);
         });
         setEstoqueTotal(valorEstoque);
       }
 
-      // 2. Carrega Vendas
       const { data: vendaData } = await supabase.from('vendas').select('*').eq('user_id', user.id);
       
       if (vendaData) {
@@ -59,10 +58,13 @@ export default function Home() {
               const qtdItem = Number(item.quantidade || 1);
               
               const idDoProduto = item.produto_id || item.id;
-              // Puxa o custo real do produto
-              const custoUnitario = custosProdutos[idDoProduto] !== undefined ? custosProdutos[idDoProduto] : Number(item.preco_custo || item.custo || 0);
+              let custoUnitario = custosProdutos[idDoProduto];
               
-              // Lucro = (Venda - Custo) * Quantidade
+              // Se o produto foi apagado, tenta pegar o custo gravado na própria venda
+              if (custoUnitario === undefined || custoUnitario === 0) {
+                 custoUnitario = Number(item.preco_custo || item.custo_unitario || item.custo || 0);
+              }
+              
               if (!isNaN(precoVendaItem) && !isNaN(custoUnitario)) {
                 lucroRealVendas += (precoVendaItem - custoUnitario) * qtdItem;
               }
@@ -103,9 +105,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="bg-[#111827] pt-8 pb-14 px-6 rounded-b-[2rem]">
-        <h1 className="text-white text-2xl font-bold flex items-center gap-2">
-          Meu Negócio 🏪
-        </h1>
+        <h1 className="text-white text-2xl font-bold flex items-center gap-2">Meu Negócio 🏪</h1>
       </div>
 
       <div className="-mt-10 px-6 space-y-4">
@@ -130,38 +130,27 @@ export default function Home() {
         <h3 className="font-bold text-gray-800 text-lg mb-4">Acesso Rápido</h3>
         <div className="grid grid-cols-2 gap-4">
           <button onClick={() => router.push('/venda')} className="bg-[#10b981] flex flex-col items-center justify-center p-6 rounded-2xl shadow-md active:scale-95 transition-transform">
-            <span className="text-3xl mb-2">💰</span>
-            <span className="text-white font-bold">Vender</span>
+            <span className="text-3xl mb-2">💰</span><span className="text-white font-bold">Vender</span>
           </button>
-          
           <button onClick={() => router.push('/produtos/novo')} className="bg-white flex flex-col items-center justify-center p-6 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-transform">
-            <span className="text-3xl mb-2">📦</span>
-            <span className="text-gray-800 font-bold">Adicionar</span>
+            <span className="text-3xl mb-2">📦</span><span className="text-gray-800 font-bold">Adicionar</span>
           </button>
-          
           <button onClick={() => router.push('/fiados')} className="bg-white flex flex-col items-center justify-center p-6 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-transform">
-            <span className="text-3xl mb-2">📝</span>
-            <span className="text-gray-800 font-bold">Fiados</span>
+            <span className="text-3xl mb-2">📝</span><span className="text-gray-800 font-bold">Fiados</span>
           </button>
-          
           <button onClick={() => router.push('/relatorio')} className="bg-white flex flex-col items-center justify-center p-6 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-transform">
-            <span className="text-3xl mb-2">📊</span>
-            <span className="text-gray-800 font-bold">Relatórios</span>
+            <span className="text-3xl mb-2">📊</span><span className="text-gray-800 font-bold">Relatórios</span>
           </button>
         </div>
       </div>
 
       <div className="px-6 mt-8">
         <h3 className="font-bold text-gray-800 text-lg mb-4">Estoque</h3>
-        
-        {loading ? (
-           <p className="text-gray-500 text-sm">Carregando...</p>
-        ) : (
+        {loading ? <p className="text-gray-500 text-sm">Carregando...</p> : (
           <div className="space-y-3">
             {produtos.map(p => {
               const esgotado = p.quantidade_estoque === 0;
               const baixo = p.quantidade_estoque > 0 && p.quantidade_estoque <= 5;
-              
               return (
                 <div key={p.id} className={`p-4 rounded-2xl shadow-sm border flex justify-between items-center ${esgotado ? 'bg-red-50 border-red-300' : baixo ? 'bg-orange-50 border-orange-300' : 'bg-white border-gray-100'}`}>
                   <div>
@@ -174,9 +163,7 @@ export default function Home() {
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-[#10b981] font-bold text-[15px]">R$ {Number(p.preco_venda).toFixed(2)}</span>
-                    <button onClick={() => setProdutoModal(p)} className="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold active:scale-95 shadow-sm">
-                      + Repor
-                    </button>
+                    <button onClick={() => setProdutoModal(p)} className="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold active:scale-95 shadow-sm">+ Repor</button>
                     <button onClick={() => apagarProduto(p.id)} className="text-gray-400 text-lg active:scale-90 ml-1">🗑️</button>
                   </div>
                 </div>
@@ -191,27 +178,14 @@ export default function Home() {
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
             <h3 className="font-black text-xl mb-1 text-gray-800">Repor Estoque</h3>
             <p className="text-sm text-gray-500 mb-5">Produto: <span className="font-bold text-gray-800">{produtoModal.nome}</span> (Atual: {produtoModal.quantidade_estoque})</p>
-            
-            <input 
-              type="number" 
-              placeholder="Quantidade a adicionar..." 
-              value={quantidadeAdicionar} 
-              onChange={(e) => setQuantidadeAdicionar(e.target.value)} 
-              className="w-full p-4 border-2 border-gray-100 rounded-xl mb-6 text-lg bg-gray-50 focus:outline-none focus:border-[#10b981]"
-            />
-            
+            <input type="number" placeholder="Quantidade a adicionar..." value={quantidadeAdicionar} onChange={(e) => setQuantidadeAdicionar(e.target.value)} className="w-full p-4 border-2 border-gray-100 rounded-xl mb-6 text-lg bg-gray-50 focus:outline-none focus:border-[#10b981]" />
             <div className="flex gap-2">
-              <button onClick={() => setProdutoModal(null)} className="flex-1 bg-gray-100 text-gray-600 font-bold p-4 rounded-xl active:scale-95">
-                Cancelar
-              </button>
-              <button onClick={recarregarEstoque} className="flex-1 bg-[#10b981] text-white font-black p-4 rounded-xl active:scale-95 shadow-md">
-                Confirmar
-              </button>
+              <button onClick={() => setProdutoModal(null)} className="flex-1 bg-gray-100 text-gray-600 font-bold p-4 rounded-xl active:scale-95">Cancelar</button>
+              <button onClick={recarregarEstoque} className="flex-1 bg-[#10b981] text-white font-black p-4 rounded-xl active:scale-95 shadow-md">Confirmar</button>
             </div>
           </div>
         </div>
       )}
-
       <BottomNav />
     </div>
   );
