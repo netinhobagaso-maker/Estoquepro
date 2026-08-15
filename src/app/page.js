@@ -9,10 +9,14 @@ export default function Home() {
   const [produtos, setProdutos] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Valores estáticos por enquanto, igual estava na sua tela
-  const faturamento = 470.00;
-  const lucro = 128.34;
-  const estoqueTotal = 516.30;
+  // Estados para o Modal de Reposição
+  const [produtoModal, setProdutoModal] = useState(null);
+  const [quantidadeAdicionar, setQuantidadeAdicionar] = useState('');
+  
+  // Valores financeiros
+  const [faturamento, setFaturamento] = useState(470.00);
+  const [lucro, setLucro] = useState(128.34);
+  const [estoqueTotal, setEstoqueTotal] = useState(516.30);
 
   useEffect(() => {
     carregarProdutos();
@@ -25,6 +29,22 @@ export default function Home() {
       if (data) setProdutos(data);
     }
     setLoading(false);
+  };
+
+  const recarregarEstoque = async () => {
+    if (!quantidadeAdicionar || Number(quantidadeAdicionar) <= 0) return alert("Digite uma quantidade válida.");
+    
+    const novaQtd = Number(produtoModal.quantidade_estoque) + Number(quantidadeAdicionar);
+    const { error } = await supabase.from('produtos')
+      .update({ quantidade_estoque: novaQtd })
+      .eq('id', produtoModal.id);
+      
+    if (!error) {
+      alert("Estoque atualizado com sucesso!");
+      setProdutoModal(null);
+      setQuantidadeAdicionar('');
+      carregarProdutos();
+    }
   };
 
   const apagarProduto = async (id) => {
@@ -97,19 +117,25 @@ export default function Home() {
         ) : (
           <div className="space-y-3">
             {produtos.map(p => {
-              const estoqueBaixo = p.quantidade_estoque <= 5;
+              const esgotado = p.quantidade_estoque === 0;
+              const baixo = p.quantidade_estoque > 0 && p.quantidade_estoque <= 5;
               
               return (
-                <div key={p.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center">
+                <div key={p.id} className={`p-4 rounded-2xl shadow-sm border flex justify-between items-center ${esgotado ? 'bg-red-50 border-red-300' : baixo ? 'bg-orange-50 border-orange-300' : 'bg-white border-gray-100'}`}>
                   <div>
                     <h4 className="font-bold text-gray-800 text-[15px]">{p.nome}</h4>
-                    <p className="text-gray-500 text-[12px] mt-0.5">
-                      Qtd: {p.quantidade_estoque} {estoqueBaixo && <span className="text-orange-500 font-bold ml-1">⚠️ Baixo</span>}
+                    <p className={`text-[12px] mt-0.5 font-bold ${esgotado ? 'text-red-600' : baixo ? 'text-orange-600' : 'text-gray-500'}`}>
+                      Qtd: {p.quantidade_estoque} 
+                      {esgotado && <span className="ml-2 uppercase bg-red-200 px-2 py-0.5 rounded text-[10px]">🔴 Esgotado</span>}
+                      {baixo && <span className="ml-2 uppercase bg-orange-200 px-2 py-0.5 rounded text-[10px]">⚠️ Baixo</span>}
                     </p>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <span className="text-[#10b981] font-bold text-[15px]">R$ {Number(p.preco_venda).toFixed(2)}</span>
-                    <button onClick={() => apagarProduto(p.id)} className="text-gray-400 text-lg active:scale-90">🗑️</button>
+                    <button onClick={() => setProdutoModal(p)} className="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold active:scale-95 shadow-sm">
+                      + Repor
+                    </button>
+                    <button onClick={() => apagarProduto(p.id)} className="text-gray-400 text-lg active:scale-90 ml-1">🗑️</button>
                   </div>
                 </div>
               );
@@ -117,6 +143,33 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* MODAL DE REPOSIÇÃO */}
+      {produtoModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
+            <h3 className="font-black text-xl mb-1 text-gray-800">Repor Estoque</h3>
+            <p className="text-sm text-gray-500 mb-5">Produto: <span className="font-bold text-gray-800">{produtoModal.nome}</span> (Atual: {produtoModal.quantidade_estoque})</p>
+            
+            <input 
+              type="number" 
+              placeholder="Quantidade a adicionar..." 
+              value={quantidadeAdicionar} 
+              onChange={(e) => setQuantidadeAdicionar(e.target.value)} 
+              className="w-full p-4 border-2 border-gray-100 rounded-xl mb-6 text-lg bg-gray-50 focus:outline-none focus:border-[#10b981]"
+            />
+            
+            <div className="flex gap-3">
+              <button onClick={() => setProdutoModal(null)} className="flex-1 bg-gray-100 text-gray-600 font-bold p-4 rounded-xl active:scale-95">
+                Cancelar
+              </button>
+              <button onClick={recarregarEstoque} className="flex-1 bg-[#10b981] text-white font-black p-4 rounded-xl active:scale-95 shadow-md">
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomNav />
     </div>
