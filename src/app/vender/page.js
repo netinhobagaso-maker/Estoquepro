@@ -59,35 +59,25 @@ export default function Vender() {
 
   const totalCarrinho = itensCarrinho.reduce((acc, item) => acc + (Number(item.preco_venda) * item.quantidade), 0);
 
-  // Função com Salvamento Inteligente para driblar o erro da coluna
   const processarVenda = async () => {
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Desconta o estoque primeiro
+    // Desconta do estoque
     for (const item of itensCarrinho) {
       const novoEstoque = item.quantidade_estoque - item.quantidade;
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
-    // Tentativa 1: Salvar como 'valor_total'
-    let { error: err1 } = await supabase.from('vendas').insert({ 
+    // Agora o Supabase vai encontrar a coluna 'total' e 'itens' corretamente!
+    const { error } = await supabase.from('vendas').insert({ 
       user_id: user.id, 
-      valor_total: totalCarrinho, 
+      total: totalCarrinho, 
       itens: itensCarrinho
     });
 
-    if (err1) {
-      // Tentativa 2: Se deu erro, tenta salvar como 'valor'
-      let { error: err2 } = await supabase.from('vendas').insert({ 
-        user_id: user.id, 
-        valor: totalCarrinho, 
-        itens: itensCarrinho
-      });
-      
-      if (err2) {
-        alert("ERRO AO SALVAR VENDA NO RELATÓRIO: " + err2.message);
-        return false; 
-      }
+    if (error) {
+      alert("ERRO AO SALVAR VENDA: " + error.message);
+      return false; 
     }
     
     return true; 
