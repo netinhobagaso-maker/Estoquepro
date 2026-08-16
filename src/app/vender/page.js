@@ -10,14 +10,11 @@ export default function Vender() {
   const [clientesFiado, setClientesFiado] = useState([]);
   const [busca, setBusca] = useState('');
   
-  // O carrinho agora é um objeto de quantidades { id_do_produto: quantidade }
   const [quantidades, setQuantidades] = useState({});
   
-  // Controle de Modais
   const [modalPagamento, setModalPagamento] = useState(false);
   const [modalFiado, setModalFiado] = useState(false);
   
-  // Estado para o Fiado
   const [clienteSelecionado, setClienteSelecionado] = useState('');
   const [novoClienteNome, setNovoClienteNome] = useState('');
 
@@ -28,19 +25,16 @@ export default function Vender() {
   const carregarDados = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      // Carrega produtos com estoque
       const { data: prodData } = await supabase.from('produtos')
         .select('*').eq('user_id', user.id).gt('quantidade_estoque', 0).order('nome');
       if (prodData) setProdutos(prodData);
 
-      // Carrega clientes do fiado
       const { data: cliData } = await supabase.from('fiados')
         .select('*').eq('user_id', user.id).order('nome_cliente');
       if (cliData) setClientesFiado(cliData);
     }
   };
 
-  // Funções do Carrinho Intuitivo (+ e -)
   const incrementar = (produto) => {
     const qtdAtual = quantidades[produto.id] || 0;
     if (qtdAtual >= produto.quantidade_estoque) return alert("Estoque insuficiente!");
@@ -65,47 +59,39 @@ export default function Vender() {
 
   const totalCarrinho = itensCarrinho.reduce((acc, item) => acc + (Number(item.preco_venda) * item.quantidade), 0);
 
-  // Função centralizada para registrar Venda (Dinheiro, Cartão, Pix ou Fiado)
+  // Função corrigida para salvar a venda sem dar erro no banco
   const processarVenda = async (formaPagamento) => {
     const { data: { user } } = await supabase.auth.getUser();
 
-    // 1. Desconta o estoque de cada produto
     for (const item of itensCarrinho) {
       const novoEstoque = item.quantidade_estoque - item.quantidade;
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
-    // 2. Sistema Inteligente de Salvamento (Tenta 'valor_total' e 'total' para evitar erros)
-    let erroBanco = null;
-    const { error: err1 } = await supabase.from('vendas').insert([{ 
-      user_id: user.id, valor_total: totalCarrinho, itens: itensCarrinho, forma_pagamento: formaPagamento 
-    }]);
+    // Código simplificado para salvar direto na tabela de vendas
+    const { error } = await supabase.from('vendas').insert({ 
+      user_id: user.id, 
+      total: totalCarrinho, 
+      itens: itensCarrinho, 
+      forma_pagamento: formaPagamento 
+    });
 
-    if (err1) {
-      const { error: err2 } = await supabase.from('vendas').insert([{ 
-        user_id: user.id, total: totalCarrinho, itens: itensCarrinho, forma_pagamento: formaPagamento 
-      }]);
-      if (err2) erroBanco = err2;
-    }
-
-    if (erroBanco) {
-      alert("ERRO AO SALVAR VENDA: " + erroBanco.message);
-      return false; // Falhou
+    if (error) {
+      alert("ERRO AO SALVAR VENDA NO RELATÓRIO: " + error.message);
+      return false; 
     }
     
-    return true; // Sucesso
+    return true; 
   };
 
-  // Venda Normal
-  const finalizarVendaComum = async (formaPagamento) => {
-    const sucesso = await processarVenda(formaPagamento);
+  const finalizarVendaComum = async () => {
+    const sucesso = await processarVenda('Receber');
     if (sucesso) {
-      alert(`✅ Venda no ${formaPagamento} registrada com sucesso!`);
+      alert(`✅ Venda registrada com sucesso!`);
       limparTela();
     }
   };
 
-  // Venda no Fiado (Pendurar)
   const finalizarFiado = async () => {
     if (!clienteSelecionado && !novoClienteNome) return alert("Selecione ou digite o nome do cliente.");
     const { data: { user } } = await supabase.auth.getUser();
@@ -113,7 +99,6 @@ export default function Vender() {
     const descItens = itensCarrinho.map(item => `${item.quantidade}x ${item.nome}`).join(' + ');
     let clienteId = clienteSelecionado;
     
-    // Cria ou atualiza a ficha do cliente
     if (clienteId === 'novo') {
       const { data: novoCliente, error } = await supabase.from('fiados').insert({
         user_id: user.id, nome_cliente: novoClienteNome, valor: totalCarrinho, status: 'pendente',
@@ -133,7 +118,6 @@ export default function Vender() {
       }).eq('id', clienteId);
     }
 
-    // Registra a venda no banco para o Relatório
     const sucesso = await processarVenda('Fiado');
     if (sucesso) {
       alert("📝 Pendurado com sucesso! Fatura do cliente atualizada.");
@@ -152,13 +136,11 @@ export default function Vender() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-32">
-      {/* Cabeçalho */}
       <div className="bg-[#111827] pt-8 pb-6 px-6 text-white rounded-b-[2rem] shadow-md">
         <h1 className="text-2xl font-bold mb-4">🛒 Ponto de Venda</h1>
         <input type="text" placeholder="Buscar produto..." value={busca} onChange={(e) => setBusca(e.target.value)} className="w-full p-3 rounded-xl bg-gray-800 text-white placeholder-gray-400 border border-gray-700 outline-none focus:border-[#10b981]" />
       </div>
 
-      {/* Lista Intuitiva de Produtos */}
       <div className="px-6 mt-6 space-y-3">
         {produtos.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase())).map(produto => (
           <div key={produto.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center">
@@ -186,7 +168,6 @@ export default function Vender() {
         {produtos.length === 0 && <p className="text-center text-gray-500 text-sm mt-10">Nenhum produto em estoque.</p>}
       </div>
 
-      {/* Botão Flutuante de Cobrar (Aparece só se tiver item no carrinho) */}
       {totalCarrinho > 0 && (
         <div className="fixed bottom-[80px] left-0 right-0 px-6 z-40">
           <button onClick={() => setModalPagamento(true)} className="w-full bg-[#10b981] text-white p-4 rounded-2xl font-black text-lg shadow-[0_10px_20px_rgba(16,185,129,0.3)] flex justify-between items-center active:scale-95 transition-transform">
@@ -199,12 +180,12 @@ export default function Vender() {
         </div>
       )}
 
-      {/* Modal 1: Escolher Forma de Pagamento */}
+      {/* Modal 1: Opções Diretas (Apenas Receber ou Fiado) */}
       {modalPagamento && !modalFiado && (
         <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-50">
           <div className="bg-white w-full rounded-t-3xl p-6 pb-10 animate-slide-up">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-xl text-gray-800">Como vai pagar?</h3>
+              <h3 className="font-black text-xl text-gray-800">Finalizar Venda</h3>
               <button onClick={() => setModalPagamento(false)} className="text-gray-400 font-bold text-xl px-2">×</button>
             </div>
             
@@ -214,10 +195,12 @@ export default function Vender() {
             </div>
 
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <button onClick={() => finalizarVendaComum('Dinheiro')} className="p-4 bg-white border-2 border-gray-100 rounded-2xl font-bold text-gray-700 active:bg-gray-50 shadow-sm text-sm">💵 Dinheiro</button>
-              <button onClick={() => finalizarVendaComum('Pix')} className="p-4 bg-white border-2 border-gray-100 rounded-2xl font-bold text-gray-700 active:bg-gray-50 shadow-sm text-sm">📱 Pix</button>
-              <button onClick={() => finalizarVendaComum('Cartão')} className="p-4 bg-white border-2 border-gray-100 rounded-2xl font-bold text-gray-700 active:bg-gray-50 shadow-sm text-sm">💳 Cartão</button>
-              <button onClick={() => setModalFiado(true)} className="p-4 bg-blue-50 border-2 border-blue-200 text-blue-700 rounded-2xl font-bold active:bg-blue-100 shadow-sm text-sm">📝 Pendurar (Fiado)</button>
+              <button onClick={() => finalizarVendaComum()} className="p-4 bg-[#10b981] text-white rounded-2xl font-black shadow-md active:scale-95 transition-transform text-sm">
+                💵 Receber
+              </button>
+              <button onClick={() => setModalFiado(true)} className="p-4 bg-blue-600 text-white rounded-2xl font-black shadow-md active:scale-95 transition-transform text-sm">
+                📝 Pendurar (Fiado)
+              </button>
             </div>
           </div>
         </div>
