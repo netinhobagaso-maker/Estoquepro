@@ -2,112 +2,90 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import BottomNav from '../../components/BottomNav';
+import { useRouter } from 'next/navigation';
 
-export default function Relatorios() {
+export default function Relatorio() {
+  const router = useRouter();
   const [vendas, setVendas] = useState([]);
+  const [faturamentoTotal, setFaturamentoTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    carregarVendas();
+    carregarRelatorios();
   }, []);
 
-  const carregarVendas = async () => {
+  const carregarRelatorios = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data } = await supabase.from('vendas').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
-      if (data) setVendas(data);
+      // Puxa as vendas ordenadas da mais recente para a mais antiga
+      const { data } = await supabase
+        .from('vendas')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (data) {
+        setVendas(data);
+        const total = data.reduce((acc, venda) => acc + Number(venda.total || 0), 0);
+        setFaturamentoTotal(total);
+      }
     }
     setLoading(false);
   };
 
-  const cancelarVenda = async (venda) => {
-    if (!confirm("Tem certeza que deseja cancelar esta venda? O estoque será devolvido.")) return;
-
-    try {
-      // 1. Devolver os itens para o estoque (CORRIGIDO PARA LER O ID CERTO)
-      if (venda.itens && venda.itens.length > 0) {
-        for (const item of venda.itens) {
-          // Tenta ler como produto_id, se não achar, lê apenas como id
-          const idDoProduto = item.produto_id || item.id;
-          const qtdCancelada = Number(item.quantidade || 1);
-
-          if (idDoProduto) {
-            const { data: produto } = await supabase.from('produtos').select('quantidade_estoque').eq('id', idDoProduto).single();
-            if (produto) {
-              const estoqueDevolvido = Number(produto.quantidade_estoque) + qtdCancelada;
-              await supabase.from('produtos').update({ quantidade_estoque: estoqueDevolvido }).eq('id', idDoProduto);
-            }
-          }
-        }
-      }
-
-      // 2. Apagar a venda do sistema
-      const { error } = await supabase.from('vendas').delete().eq('id', venda.id);
-
-      if (!error) {
-        alert("Venda cancelada! Estoque e valores revertidos com sucesso.");
-        carregarVendas();
-      }
-    } catch (erro) {
-      console.error(erro);
-      alert("Ocorreu um erro ao cancelar a venda.");
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-[#111827] pt-8 pb-8 px-6 rounded-b-[2rem] text-white shadow-md">
-        <h1 className="text-2xl font-bold">📊 Relatórios de Vendas</h1>
+      <div className="bg-[#111827] pt-8 pb-14 px-6 rounded-b-[2rem] shadow-md">
+        <h1 className="text-white text-2xl font-bold flex items-center gap-2">📊 Relatórios</h1>
+        <p className="text-gray-400 text-sm mt-1">Análise de vendas e faturamento</p>
       </div>
 
-      <div className="px-6 mt-6 space-y-4">
-        {loading ? <p>Carregando...</p> : (
-          vendas.map(venda => {
-            // Tratamento anti-NaN para exibir os valores corretamente
-            const totalDaVenda = Number(venda.total || venda.valor_total || 0);
+      <div className="-mt-8 px-6 space-y-4">
+        <div className="bg-white p-5 rounded-2xl shadow-lg border border-gray-100">
+          <p className="text-sm text-gray-500 font-bold mb-1">Faturamento Geral</p>
+          <h2 className="text-4xl font-black text-[#10b981]">R$ {faturamentoTotal.toFixed(2)}</h2>
+        </div>
+      </div>
 
-            return (
-              <div key={venda.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                <div className="flex justify-between items-center border-b pb-3 mb-3">
-                  <div>
-                    <p className="font-black text-emerald-600 text-xl">
-                      R$ {isNaN(totalDaVenda) ? '0.00' : totalDaVenda.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-gray-400">{new Date(venda.created_at).toLocaleString('pt-BR')}</p>
+      <div className="px-6 mt-8">
+        <h3 className="font-bold text-gray-800 text-lg mb-4">Histórico de Vendas</h3>
+        
+        {loading ? (
+          <p className="text-gray-500 text-sm">Carregando relatórios...</p>
+        ) : vendas.length === 0 ? (
+          <div className="bg-white p-6 rounded-2xl border border-gray-200 text-center shadow-sm">
+            <p className="text-gray-500 font-medium">Nenhuma venda registrada ainda.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {vendas.map(venda => {
+              const dataVenda = new Date(venda.created_at).toLocaleDateString('pt-BR', {
+                day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+              });
+
+              return (
+                <div key={venda.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-2">
+                  <div className="flex justify-between items-center border-b border-gray-50 pb-2">
+                    <span className="text-xs text-gray-500 font-bold">{dataVenda}</span>
+                    <span className={`text-xs font-bold px-2 py-1 rounded ${venda.forma_pagamento === 'Fiado' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                      {venda.forma_pagamento || 'Dinheiro'}
+                    </span>
                   </div>
-                  <span className="bg-gray-100 text-gray-600 px-3 py-1 rounded-full text-xs font-bold">
-                    {venda.forma_pagamento || 'Venda'}
-                  </span>
+                  <div className="flex justify-between items-center pt-1">
+                    <div className="text-sm text-gray-600 truncate max-w-[60%]">
+                      {venda.itens ? venda.itens.map(i => `${i.quantidade}x ${i.nome}`).join(', ') : 'Itens não detalhados'}
+                    </div>
+                    <span className="font-black text-lg text-gray-800">
+                      R$ {Number(venda.total).toFixed(2)}
+                    </span>
+                  </div>
                 </div>
-                
-                <div className="space-y-1 mb-4">
-                  {venda.itens && venda.itens.map((item, i) => {
-                    const precoItem = Number(item.preco_venda || item.preco || 0);
-                    const qtdItem = Number(item.quantidade || 1);
-                    const totalItem = precoItem * qtdItem;
-
-                    return (
-                      <p key={i} className="text-sm text-gray-700 flex justify-between">
-                        <span>{qtdItem}x {item.nome}</span>
-                        <span className="font-bold">
-                          R$ {isNaN(totalItem) ? '0.00' : totalItem.toFixed(2)}
-                        </span>
-                      </p>
-                    );
-                  })}
-                </div>
-
-                <button onClick={() => cancelarVenda(venda)} className="w-full bg-red-50 text-red-500 font-bold p-3 rounded-xl text-sm border border-red-100 active:scale-95">
-                  ❌ Cancelar Venda e Devolver Estoque
-                </button>
-              </div>
-            );
-          })
-        )}
-        {vendas.length === 0 && !loading && (
-          <p className="text-center text-gray-500 mt-10">Nenhuma venda registrada ainda.</p>
+              );
+            })}
+          </div>
         )}
       </div>
+
       <BottomNav />
     </div>
   );
