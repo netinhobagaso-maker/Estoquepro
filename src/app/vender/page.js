@@ -68,10 +68,11 @@ export default function Vender() {
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
-    // Agora o Supabase vai encontrar a coluna 'total' e 'itens' corretamente!
+    // Agora enviamos tanto para 'total' quanto para 'valor_total' para garantir!
     const { error } = await supabase.from('vendas').insert({ 
       user_id: user.id, 
-      total: totalCarrinho, 
+      total: totalCarrinho,
+      valor_total: totalCarrinho, // Correção do erro da coluna obrigatória
       itens: itensCarrinho
     });
 
