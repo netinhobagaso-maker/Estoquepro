@@ -19,7 +19,8 @@ export default function BottomNav() {
         <span className="text-[10px] font-bold">Novo Produto</span>
       </button>
 
-      <button onClick={() => router.push('/venda')} className="flex flex-col items-center -mt-8 bg-[#10b981] w-14 h-14 justify-center rounded-full shadow-lg shadow-emerald-500/40 text-white active:scale-95 transition-all">
+      {/* BOTÃO DE VENDER CORRIGIDO AQUI */}
+      <button onClick={() => router.push('/vender')} className="flex flex-col items-center -mt-8 bg-[#10b981] w-14 h-14 justify-center rounded-full shadow-lg shadow-emerald-500/40 text-white active:scale-95 transition-all">
         <span className="text-2xl">💰</span>
       </button>
 
@@ -28,8 +29,8 @@ export default function BottomNav() {
         <span className="text-[10px] font-bold">Fiados</span>
       </button>
       
-      {/* CORREÇÃO DO LINK AQUI */}
-      <button onClick={() => router.push('/relatorio')} className={`flex flex-col items-center p-2 rounded-xl transition-all ${isActive('/relatorio') ? 'text-[#10b981] scale-110' : 'text-gray-400'}`}>
+      {/* BOTÃO DE RELATÓRIO CORRIGIDO AQUI */}
+      <button onClick={() => router.push('/relatorios')} className={`flex flex-col items-center p-2 rounded-xl transition-all ${isActive('/relatorios') ? 'text-[#10b981] scale-110' : 'text-gray-400'}`}>
         <span className="text-xl mb-1">📊</span>
         <span className="text-[10px] font-bold">Relatório</span>
       </button>
