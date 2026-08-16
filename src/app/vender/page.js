@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import BottomNav from '../../components/BottomNav';
 import { useRouter } from 'next/navigation';
 
-export default function Venda() {
+export default function Vender() {
   const router = useRouter();
   const [produtos, setProdutos] = useState([]);
   const [carrinho, setCarrinho] = useState([]);
@@ -24,6 +24,7 @@ export default function Venda() {
   const carregarProdutos = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
+      // Puxa só os produtos que tem estoque > 0
       const { data } = await supabase.from('produtos').select('*').eq('user_id', user.id).gt('quantidade_estoque', 0).order('nome');
       if (data) setProdutos(data);
     }
@@ -53,69 +54,86 @@ export default function Venda() {
 
   const totalCarrinho = carrinho.reduce((acc, item) => acc + (Number(item.preco_venda) * item.quantidade), 0);
 
-  // Venda Comum (Dinheiro, Cartão, Pix)
+  // Venda Comum (Dinheiro, Cartão, Pix) - Registra e Desconta Estoque
   const finalizarVenda = async (formaPagamento = 'Dinheiro') => {
     if (carrinho.length === 0) return alert("Carrinho vazio!");
     const { data: { user } } = await supabase.auth.getUser();
     
+    // 1. Desconta do estoque
     for (const item of carrinho) {
       const novoEstoque = item.quantidade_estoque - item.quantidade;
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
+    // 2. Salva a venda para aparecer no RELATÓRIO
     const { error } = await supabase.from('vendas').insert({
-      user_id: user.id, total: totalCarrinho, itens: carrinho, forma_pagamento: formaPagamento
+      user_id: user.id, 
+      total: totalCarrinho, 
+      itens: carrinho, 
+      forma_pagamento: formaPagamento
     });
 
     if (!error) {
-      alert("Venda finalizada com sucesso!");
+      alert("✅ Venda finalizada com sucesso!");
       setCarrinho([]);
       carregarProdutos();
+    } else {
+      alert("Erro ao registrar venda.");
     }
   };
 
-  // Venda Fiado - ENVIO AUTOMÁTICO
+  // Venda Fiado - ENVIO AUTOMÁTICO PARA A TELA DE FIADOS
   const finalizarVendaFiado = async () => {
     if (!clienteSelecionado && !novoClienteNome) return alert("Selecione ou digite o nome do cliente.");
     
     const { data: { user } } = await supabase.auth.getUser();
     
-    // Transforma o carrinho em texto. Ex: "2x Coca, 1x Bolacha"
-    const descItens = carrinho.map(item => `${item.quantidade}x ${item.nome}`).join(', ');
+    // Cria o texto que vai pro histórico do cliente. Ex: "2x Coca Cola + 1x Redbull"
+    const descItens = carrinho.map(item => `${item.quantidade}x ${item.nome}`).join(' + ');
     
     let clienteId = clienteSelecionado;
     
-    // Se for cliente novo, cria ele primeiro
+    // Se for cliente novo, cria a ficha dele
     if (clienteId === 'novo') {
       const { data: novoCliente, error } = await supabase.from('fiados').insert({
-        user_id: user.id, nome_cliente: novoClienteNome, valor: totalCarrinho, status: 'pendente',
+        user_id: user.id, 
+        nome_cliente: novoClienteNome, 
+        valor: totalCarrinho, 
+        status: 'pendente',
         historico: [{ data: new Date().toISOString(), desc: descItens, val: totalCarrinho }]
       }).select().single();
       
       if (error) return alert("Erro ao criar cliente.");
       clienteId = novoCliente.id;
     } else {
-      // Se já existe, pega a ficha dele e insere a compra
+      // Se já existe, atualiza a dívida dele
       const clienteData = clientesFiado.find(c => c.id === clienteId);
       const historicoAtual = clienteData.status === 'pago' ? [] : (clienteData.historico || []);
       const novoHistorico = [...historicoAtual, { data: new Date().toISOString(), desc: descItens, val: totalCarrinho }];
       const novoValor = (clienteData.status === 'pago' ? 0 : Number(clienteData.valor)) + totalCarrinho;
       
-      await supabase.from('fiados').update({ valor: novoValor, status: 'pendente', historico: novoHistorico }).eq('id', clienteId);
+      await supabase.from('fiados').update({ 
+        valor: novoValor, 
+        status: 'pendente', 
+        historico: novoHistorico 
+      }).eq('id', clienteId);
     }
 
-    // Desconta o estoque normalmente
+    // 1. Desconta o estoque
     for (const item of carrinho) {
       const novoEstoque = item.quantidade_estoque - item.quantidade;
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
-    // Salva a venda para aparecer no relatório de lucro
+    // 2. Salva a venda para aparecer no RELATÓRIO (como Fiado)
     await supabase.from('vendas').insert({
-      user_id: user.id, total: totalCarrinho, itens: carrinho, forma_pagamento: 'Fiado'
+      user_id: user.id, 
+      total: totalCarrinho, 
+      itens: carrinho, 
+      forma_pagamento: 'Fiado'
     });
 
-    alert("MÁGICA FEITA! Fatura do cliente atualizada e venda salva com sucesso!");
+    alert("📝 Pendurado com sucesso! Fatura do cliente atualizada.");
     setModalFiado(false);
     setCarrinho([]);
     setClienteSelecionado('');
@@ -144,6 +162,7 @@ export default function Venda() {
                 </div>
               </div>
             ))}
+            {produtos.length === 0 && <p className="text-gray-500 text-sm col-span-2">Nenhum produto em estoque.</p>}
           </div>
         </div>
 
