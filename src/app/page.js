@@ -31,7 +31,6 @@ export default function Home() {
       if (prodData) {
         setProdutos(prodData);
         prodData.forEach(p => {
-          // BLINDAGEM: Procura o custo por todos os nomes possíveis que possam estar no seu banco
           const custoDoProduto = Number(p.preco_custo || p.custo_unitario || p.custo || p.custo_unidade || p.valor_custo || 0);
           custosProdutos[p.id] = custoDoProduto;
           valorEstoque += Number(p.preco_venda || p.preco || 0) * Number(p.quantidade_estoque || 0);
@@ -47,7 +46,6 @@ export default function Home() {
 
         vendaData.forEach(v => {
           const valorDaVenda = Number(v.total || v.valor_total || 0);
-          
           if (!isNaN(valorDaVenda)) {
             totalFat += valorDaVenda;
           }
@@ -56,11 +54,9 @@ export default function Home() {
             v.itens.forEach(item => {
               const precoVendaItem = Number(item.preco_venda || item.preco || 0);
               const qtdItem = Number(item.quantidade || 1);
-              
               const idDoProduto = item.produto_id || item.id;
               let custoUnitario = custosProdutos[idDoProduto];
               
-              // Se o produto foi apagado, tenta pegar o custo gravado na própria venda
               if (custoUnitario === undefined || custoUnitario === 0) {
                  custoUnitario = Number(item.preco_custo || item.custo_unitario || item.custo || 0);
               }
@@ -81,12 +77,8 @@ export default function Home() {
 
   const recarregarEstoque = async () => {
     if (!quantidadeAdicionar || Number(quantidadeAdicionar) <= 0) return alert("Digite uma quantidade válida.");
-    
     const novaQtd = Number(produtoModal.quantidade_estoque) + Number(quantidadeAdicionar);
-    const { error } = await supabase.from('produtos')
-      .update({ quantidade_estoque: novaQtd })
-      .eq('id', produtoModal.id);
-      
+    const { error } = await supabase.from('produtos').update({ quantidade_estoque: novaQtd }).eq('id', produtoModal.id);
     if (!error) {
       alert("Estoque atualizado com sucesso!");
       setProdutoModal(null);
@@ -129,7 +121,8 @@ export default function Home() {
       <div className="px-6 mt-8">
         <h3 className="font-bold text-gray-800 text-lg mb-4">Acesso Rápido</h3>
         <div className="grid grid-cols-2 gap-4">
-          <button onClick={() => router.push('/venda')} className="bg-[#10b981] flex flex-col items-center justify-center p-6 rounded-2xl shadow-md active:scale-95 transition-transform">
+          {/* BOTÕES COM OS LINKS CORRIGIDOS AQUI */}
+          <button onClick={() => router.push('/vender')} className="bg-[#10b981] flex flex-col items-center justify-center p-6 rounded-2xl shadow-md active:scale-95 transition-transform">
             <span className="text-3xl mb-2">💰</span><span className="text-white font-bold">Vender</span>
           </button>
           <button onClick={() => router.push('/produtos/novo')} className="bg-white flex flex-col items-center justify-center p-6 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-transform">
@@ -138,7 +131,7 @@ export default function Home() {
           <button onClick={() => router.push('/fiados')} className="bg-white flex flex-col items-center justify-center p-6 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-transform">
             <span className="text-3xl mb-2">📝</span><span className="text-gray-800 font-bold">Fiados</span>
           </button>
-          <button onClick={() => router.push('/relatorio')} className="bg-white flex flex-col items-center justify-center p-6 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-transform">
+          <button onClick={() => router.push('/relatorios')} className="bg-white flex flex-col items-center justify-center p-6 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-transform">
             <span className="text-3xl mb-2">📊</span><span className="text-gray-800 font-bold">Relatórios</span>
           </button>
         </div>
