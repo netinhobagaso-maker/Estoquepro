@@ -59,8 +59,8 @@ export default function Vender() {
 
   const totalCarrinho = itensCarrinho.reduce((acc, item) => acc + (Number(item.preco_venda) * item.quantidade), 0);
 
-  // Função corrigida para salvar a venda sem dar erro no banco
-  const processarVenda = async (formaPagamento) => {
+  // Função corrigida: removido o "forma_pagamento" para não dar erro no Supabase
+  const processarVenda = async () => {
     const { data: { user } } = await supabase.auth.getUser();
 
     for (const item of itensCarrinho) {
@@ -68,12 +68,10 @@ export default function Vender() {
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
-    // Código simplificado para salvar direto na tabela de vendas
     const { error } = await supabase.from('vendas').insert({ 
       user_id: user.id, 
       total: totalCarrinho, 
-      itens: itensCarrinho, 
-      forma_pagamento: formaPagamento 
+      itens: itensCarrinho
     });
 
     if (error) {
@@ -85,7 +83,7 @@ export default function Vender() {
   };
 
   const finalizarVendaComum = async () => {
-    const sucesso = await processarVenda('Receber');
+    const sucesso = await processarVenda();
     if (sucesso) {
       alert(`✅ Venda registrada com sucesso!`);
       limparTela();
@@ -118,7 +116,7 @@ export default function Vender() {
       }).eq('id', clienteId);
     }
 
-    const sucesso = await processarVenda('Fiado');
+    const sucesso = await processarVenda();
     if (sucesso) {
       alert("📝 Pendurado com sucesso! Fatura do cliente atualizada.");
       limparTela();
@@ -180,10 +178,10 @@ export default function Vender() {
         </div>
       )}
 
-      {/* Modal 1: Opções Diretas (Apenas Receber ou Fiado) */}
+      {/* Modal 1: Adicionado pb-28 para subir os botões e fugir do BottomNav */}
       {modalPagamento && !modalFiado && (
         <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-50">
-          <div className="bg-white w-full rounded-t-3xl p-6 pb-10 animate-slide-up">
+          <div className="bg-white w-full rounded-t-3xl p-6 pb-28 animate-slide-up">
             <div className="flex justify-between items-center mb-6">
               <h3 className="font-black text-xl text-gray-800">Finalizar Venda</h3>
               <button onClick={() => setModalPagamento(false)} className="text-gray-400 font-bold text-xl px-2">×</button>
@@ -206,10 +204,10 @@ export default function Vender() {
         </div>
       )}
 
-      {/* Modal 2: Escolher Cliente do Fiado */}
+      {/* Modal 2: Adicionado mb-20 para empurrar o card para cima */}
       {modalFiado && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl mb-20">
             <h3 className="font-black text-xl mb-1 text-gray-800 flex items-center gap-2">📝 Lançar Fiado</h3>
             <p className="text-sm text-gray-500 mb-5">Valor: <span className="font-bold text-[#10b981]">R$ {totalCarrinho.toFixed(2)}</span></p>
             
