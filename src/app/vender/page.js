@@ -59,24 +59,35 @@ export default function Vender() {
 
   const totalCarrinho = itensCarrinho.reduce((acc, item) => acc + (Number(item.preco_venda) * item.quantidade), 0);
 
-  // Função corrigida: removido o "forma_pagamento" para não dar erro no Supabase
+  // Função com Salvamento Inteligente para driblar o erro da coluna
   const processarVenda = async () => {
     const { data: { user } } = await supabase.auth.getUser();
 
+    // Desconta o estoque primeiro
     for (const item of itensCarrinho) {
       const novoEstoque = item.quantidade_estoque - item.quantidade;
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
-    const { error } = await supabase.from('vendas').insert({ 
+    // Tentativa 1: Salvar como 'valor_total'
+    let { error: err1 } = await supabase.from('vendas').insert({ 
       user_id: user.id, 
-      total: totalCarrinho, 
+      valor_total: totalCarrinho, 
       itens: itensCarrinho
     });
 
-    if (error) {
-      alert("ERRO AO SALVAR VENDA NO RELATÓRIO: " + error.message);
-      return false; 
+    if (err1) {
+      // Tentativa 2: Se deu erro, tenta salvar como 'valor'
+      let { error: err2 } = await supabase.from('vendas').insert({ 
+        user_id: user.id, 
+        valor: totalCarrinho, 
+        itens: itensCarrinho
+      });
+      
+      if (err2) {
+        alert("ERRO AO SALVAR VENDA NO RELATÓRIO: " + err2.message);
+        return false; 
+      }
     }
     
     return true; 
@@ -178,7 +189,6 @@ export default function Vender() {
         </div>
       )}
 
-      {/* Modal 1: Adicionado pb-28 para subir os botões e fugir do BottomNav */}
       {modalPagamento && !modalFiado && (
         <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-50">
           <div className="bg-white w-full rounded-t-3xl p-6 pb-28 animate-slide-up">
@@ -204,7 +214,6 @@ export default function Vender() {
         </div>
       )}
 
-      {/* Modal 2: Adicionado mb-20 para empurrar o card para cima */}
       {modalFiado && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl mb-20">
