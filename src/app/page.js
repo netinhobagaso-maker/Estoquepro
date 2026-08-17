@@ -18,33 +18,37 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. CARREGAR PRODUTOS E CALCULAR O CUSTO UNITÁRIO EXATO (Igual ao seu print)
+    // 1. CARREGAR PRODUTOS E MAPEAR CUSTOS POR ID E POR NOME
     const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
     
     let totalEstoque = 0;
-    let custoPorProduto = {}; 
+    let custoPorId = {};
+    let custoPorNome = {};
 
     if (produtos) {
       setListaProdutos(produtos); 
       
       produtos.forEach(produto => {
-        let custoUnitario = Number(produto.custo_unidade || produto.preco_custo || produto.custo || 0);
+        // Tenta pegar o custo unitário direto
+        let custoUnitario = Number(produto.custo_unidade || produto.preco_custo || produto.custo || produto.valor_custo || 0);
 
-        // Se o custo unitário direto não existir, calcula via Gasto Total / Unidades Totais (Ex: 35 / 5 = 7.00)
+        // Se não tiver, calcula com base no Gasto Total / Unidades (Ex: 35 / 5 = 7.00)
         if (custoUnitario === 0) {
-          const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || 0);
-          const qtdCaixas = Number(produto.qtd_caixas || 1);
-          const unidadesNaCaixa = Number(produto.unidades_caixa || produto.unidades || 1);
+          const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || produto.total_gasto || produto.custo_total || 0);
+          const qtdCaixas = Number(produto.qtd_caixas || produto.quantidade_caixas || produto.caixas || 1);
+          const unidadesNaCaixa = Number(produto.unidades_caixa || produto.unidades_por_caixa || produto.unidades || produto.quantidade_por_caixa || 1);
           
-          if (gastoTotal > 0) {
-            custoUnitario = gastoTotal / (qtdCaixas * unidadesNaCaixa);
+          const totalUnidades = qtdCaixas * unidadesNaCaixa;
+          if (gastoTotal > 0 && totalUnidades > 0) {
+            custoUnitario = gastoTotal / totalUnidades;
           }
         }
 
-        const precoVenda = Number(produto.preco_venda || 0);
+        const precoVenda = Number(produto.preco_venda || produto.preco || 0);
         const qtdEstoque = Number(produto.quantidade_estoque || produto.quantidade || 0);
         
-        custoPorProduto[produto.id] = custoUnitario;
+        if (produto.id) custoPorId[produto.id] = custoUnitario;
+        if (produto.nome) custoPorNome[produto.nome.trim().toLowerCase()] = custoUnitario;
         
         const valorBaseEstoque = custoUnitario > 0 ? custoUnitario : precoVenda;
         totalEstoque += (valorBaseEstoque * qtdEstoque);
@@ -53,7 +57,7 @@ export default function Dashboard() {
     
     setValorEstoque(totalEstoque); 
 
-    // 2. CARREGAR VENDAS E CALCULAR LUCRO REAL SUBTRAINDO OS CUSTOS
+    // 2. CARREGAR VENDAS E CALCULAR O LUCRO REAL COM SEGURANÇA MÁXIMA
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
     
     let totalFat = 0;
@@ -65,18 +69,29 @@ export default function Dashboard() {
         
         if (venda.itens && Array.isArray(venda.itens)) {
           venda.itens.forEach(item => {
-            const custoItemBanco = Number(item.custo_unidade || item.preco_custo || item.custo || 0);
-            const custoReal = custoItemBanco > 0 ? custoItemBanco : (custoPorProduto[item.id] || 0);
-            const qtdVendida = Number(item.quantidade || 1);
+            let custoItem = Number(item.custo_unidade || item.preco_custo || item.custo || 0);
             
-            totalCustoVendas += (custoReal * qtdVendida);
+            // Garantia dupla: se faltar no item, busca no mapa de produtos por ID ou por Nome
+            if (custoItem === 0) {
+              if (item.id && custoPorId[item.id]) {
+                custoItem = custoPorId[item.id];
+              } else if (item.nome) {
+                custoItem = custoPorNome[item.nome.trim().toLowerCase()] || 0;
+              }
+            }
+
+            const qtdVendida = Number(item.quantidade || item.qtd || 1);
+            totalCustoVendas += (custoItem * qtdVendida);
           });
         }
       });
     }
 
     setFaturamento(totalFat);
-    setLucro(totalFat - totalCustoVendas);
+    
+    // Lucro Real = Faturamento - Custo de fábrica dos produtos vendidos
+    const lucroCalculado = totalFat - totalCustoVendas;
+    setLucro(lucroCalculado >= 0 ? lucroCalculado : 0);
   };
 
   const apagarProduto = async (id) => {
@@ -90,19 +105,19 @@ export default function Dashboard() {
   const reporEstoque = async (produto) => {
     const qtd = window.prompt(`Quantas unidades de "${produto.nome}" você quer adicionar ao estoque?`);
     if (qtd && !isNaN(qtd) && Number(qtd) > 0) {
-      const novaQtd = Number(produto.quantidade_estoque || 0) + Number(qtd);
+      const novaQtd = Number(produto.quantidade_estoque || produto.quantidade || 0) + Number(qtd);
       await supabase.from('produtos').update({ quantidade_estoque: novaQtd }).eq('id', produto.id);
       carregarDados();
     }
   };
 
   const zerarVendas = async () => {
-    const confirmar = window.confirm("⚠️ ATENÇÃO: Deseja apagar TODAS as vendas para começar a testar com os custos corretos?");
+    const confirmar = window.confirm("⚠️ ATENÇÃO: Deseja apagar TODAS as vendas para reiniciar o faturamento e o lucro com os custos corretos?");
     if (confirmar) {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('vendas').delete().eq('user_id', user.id);
       if (!error) {
-        alert("✅ Histórico de vendas zerado!");
+        alert("✅ Histórico de vendas zerado com sucesso!");
         carregarDados();
       } else {
         alert("Erro: " + error.message);
@@ -112,13 +127,16 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-28">
+      {/* Cabeçalho */}
       <div className="bg-[#111827] pt-12 pb-20 px-6 text-white rounded-b-[2.5rem]">
         <h1 className="text-2xl font-bold flex items-center gap-2">
           Meu Negócio 🏪
         </h1>
       </div>
 
+      {/* Cards de Resumo */}
       <div className="px-6 -mt-12 space-y-4">
+        {/* Card Faturamento */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <p className="text-gray-500 font-bold text-sm mb-1">Faturamento Total</p>
           <h2 className="text-4xl font-black text-[#10b981]">
@@ -126,6 +144,7 @@ export default function Dashboard() {
           </h2>
         </div>
 
+        {/* Cards Menores: Lucro e Estoque */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
             <p className="text-gray-500 font-bold text-xs mb-1">Lucro Obtido</p>
@@ -142,6 +161,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Acesso Rápido */}
       <div className="px-6 mt-8">
         <h3 className="text-lg font-bold text-gray-800 mb-4">Acesso Rápido</h3>
         <div className="grid grid-cols-2 gap-4">
@@ -164,6 +184,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Gerenciar Estoque */}
       <div className="px-6 mt-10">
         <h3 className="text-lg font-bold text-gray-800 mb-4">Gerenciar Estoque</h3>
         <div className="space-y-3">
@@ -195,6 +216,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Botão de Zerar Vendas */}
       <div className="px-6 mt-10 mb-4">
         <button 
           onClick={zerarVendas}
