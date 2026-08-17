@@ -59,44 +59,20 @@ export default function Vender() {
 
   const totalCarrinho = itensCarrinho.reduce((acc, item) => acc + (Number(item.preco_venda) * item.quantidade), 0);
 
-  // FUNÇÃO PARA CALCULAR O CUSTO UNITÁRIO EXATO DE CADA PRODUTO NA HORA
-  const calcularCustoUnitario = (produto) => {
-    const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || produto.total_gasto || produto.custo_total || 0);
-    const qtdCaixas = Number(produto.qtd_caixas || produto.quantidade_caixas || produto.caixas || 1);
-    const unidadesNaCaixa = Number(produto.unidades_caixa || produto.unidades_por_caixa || produto.unidades || produto.quantidade_por_caixa || 1);
-    const totalUnidades = qtdCaixas * unidadesNaCaixa;
-
-    if (gastoTotal > 0 && totalUnidades > 0) {
-      return gastoTotal / totalUnidades;
-    }
-    return Number(produto.custo_unidade || produto.preco_custo || produto.custo || produto.valor_custo || 0);
-  };
-
   const processarVenda = async () => {
     const { data: { user } } = await supabase.auth.getUser();
 
-    // 1. Calcula o custo total e o lucro exato desta venda na hora
-    let custoTotalVenda = 0;
-    itensCarrinho.forEach(item => {
-      const custoUni = calcularCustoUnitario(item);
-      custoTotalVenda += (custoUni * item.quantidade);
-    });
-
-    const lucroVenda = totalCarrinho - custoTotalVenda;
-
-    // 2. Desconta do estoque
+    // Desconta do estoque
     for (const item of itensCarrinho) {
       const novoEstoque = item.quantidade_estoque - item.quantidade;
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
-    // 3. Salva a venda já COM O LUCRO E CUSTO CALCULADOS DIRETAMENTE NO BANCO!
+    // Salva apenas nas colunas padrão garantidas (user_id, total, valor_total e itens)
     const { error } = await supabase.from('vendas').insert({ 
       user_id: user.id, 
       total: totalCarrinho,
       valor_total: totalCarrinho,
-      custo_total: Number(custoTotalVenda.toFixed(2)),
-      lucro: Number(lucroVenda.toFixed(2)),
       itens: itensCarrinho
     });
 
