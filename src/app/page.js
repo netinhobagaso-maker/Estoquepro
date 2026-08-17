@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import BottomNav from '../components/BottomNav';
+import BottomNav from '@/components/BottomNav';
 
 export default function Dashboard() {
   const [faturamento, setFaturamento] = useState(0);
@@ -13,32 +13,37 @@ export default function Dashboard() {
     carregarDados();
   }, []);
 
-  const parseNum = (val) => parseFloat(String(val || 0).replace(',', '.')) || 0;
+  const formatarDinheiro = (valor) => {
+    let numero = parseFloat(String(valor || 0).replace(',', '.')) || 0;
+    return Number(numero.toFixed(2));
+  };
 
   const carregarDados = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. VALOR TOTAL EM ESTOQUE (Baseado no custo por unidade)
+    // 1. LER PRODUTOS
     const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id);
     if (produtos) {
-      const totEstoque = produtos.reduce((acc, p) => acc + (parseNum(p.custo_unitario) * parseNum(p.quantidade_estoque)), 0);
-      setValorEstoque(totEstoque);
+      const totEstoque = produtos.reduce((acc, p) => 
+        acc + (formatarDinheiro(p.custo_unitario) * formatarDinheiro(p.quantidade_estoque)), 0
+      );
+      setValorEstoque(formatarDinheiro(totEstoque));
     }
 
-    // 2. FATURAMENTO E LUCRO DIRETO DAS VENDAS
+    // 2. LER VENDAS (agora com centavos garantidos)
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
     if (vendas) {
-      const totalFat = vendas.reduce((acc, v) => acc + parseNum(v.valor_total || v.total), 0);
-      const totalLucro = vendas.reduce((acc, v) => acc + parseNum(v.total_lucro), 0);
+      const totalFat = vendas.reduce((acc, v) => acc + formatarDinheiro(v.valor_total || v.total), 0);
+      const totalLucro = vendas.reduce((acc, v) => acc + formatarDinheiro(v.total_lucro), 0);
 
-      setFaturamento(totalFat);
-      setLucro(totalLucro);
+      setFaturamento(formatarDinheiro(totalFat));
+      setLucro(formatarDinheiro(totalLucro));
     }
   };
 
   const zerarVendas = async () => {
-    if (window.confirm("⚠️ Deseja apagar todas as vendas antigas para iniciar os cálculos com os novos produtos?")) {
+    if (window.confirm("⚠️ Deseja apagar todas as vendas antigas para iniciar com o cálculo exato de centavos?")) {
       const { data: { user } } = await supabase.auth.getUser();
       await supabase.from('vendas').delete().eq('user_id', user.id);
       alert("✅ Histórico zerado com sucesso!");
@@ -73,7 +78,7 @@ export default function Dashboard() {
       <div className="px-6 mt-8">
         <div className="grid grid-cols-2 gap-4">
           <Link href="/vender" className="bg-[#10b981] p-6 rounded-2xl flex flex-col items-center justify-center text-white font-bold text-lg">💰 Vender</Link>
-          <Link href="/novo-produto" className="bg-white p-6 rounded-2xl border border-gray-100 flex flex-col items-center justify-center text-gray-700 font-bold text-lg">📦 Adicionar</Link>
+          <Link href="/novo/produtos" className="bg-white p-6 rounded-2xl border border-gray-100 flex flex-col items-center justify-center text-gray-700 font-bold text-lg">📦 Adicionar</Link>
         </div>
       </div>
 
