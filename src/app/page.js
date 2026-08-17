@@ -14,7 +14,6 @@ export default function Dashboard() {
     carregarDados();
   }, []);
 
-  // Garantia blindada de que lidaremos com centavos corretamente
   const formatarDinheiro = (valor) => {
     let numero = parseFloat(String(valor || 0).replace(',', '.')) || 0;
     return Number(numero.toFixed(2));
@@ -24,9 +23,7 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. LER PRODUTOS (Cálculo do Estoque Atual e Lucro Esperado)
     const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id);
-    
     if (produtos) {
       let custoTotalEstoque = 0;
       let lucroPrevistoTotal = 0;
@@ -44,9 +41,7 @@ export default function Dashboard() {
       setLucroEsperadoEstoque(lucroPrevistoTotal);
     }
 
-    // 2. LER VENDAS (Soma direta do que entrou no caixa e do lucro real, sem cálculos complexos)
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
-    
     if (vendas) {
       let faturamentoTotal = 0;
       let lucroTotalRealizado = 0;
@@ -62,7 +57,7 @@ export default function Dashboard() {
   };
 
   const zerarVendas = async () => {
-    if (window.confirm("⚠️ Deseja apagar todas as vendas antigas para iniciar perfeitamente com o novo sistema?")) {
+    if (window.confirm("⚠️ Deseja apagar todas as vendas antigas para reiniciar?")) {
       const { data: { user } } = await supabase.auth.getUser();
       await supabase.from('vendas').delete().eq('user_id', user.id);
       alert("✅ Histórico zerado com sucesso!");
@@ -77,27 +72,22 @@ export default function Dashboard() {
       </div>
 
       <div className="px-6 -mt-12 space-y-4">
-        
-        {/* BLOCO 1: DINHEIRO NO CAIXA */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <p className="text-gray-500 font-bold text-sm mb-1">💰 Faturamento (Entrou no Caixa)</p>
           <h2 className="text-4xl font-black text-[#10b981]">R$ {faturamento.toFixed(2)}</h2>
         </div>
 
-        {/* BLOCO 2: LUCRO REALIZADO */}
         <div className="bg-emerald-50 p-6 rounded-2xl shadow-sm border border-emerald-100">
           <p className="text-emerald-700 font-bold text-sm mb-1">🚀 Lucro Obtido (Livre nas Vendas)</p>
           <h2 className="text-3xl font-black text-emerald-600">R$ {lucroObtido.toFixed(2)}</h2>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          {/* BLOCO 3: CUSTO DO ESTOQUE */}
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
             <p className="text-gray-500 font-bold text-[11px] mb-1 uppercase tracking-wider">Investido no Estoque</p>
             <h3 className="text-xl font-black text-gray-800">R$ {valorEstoqueCusto.toFixed(2)}</h3>
           </div>
 
-          {/* BLOCO 4: LUCRO ESPERADO */}
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
             <p className="text-blue-500 font-bold text-[11px] mb-1 uppercase tracking-wider">Lucro Esperado (Estoque)</p>
             <h3 className="text-xl font-black text-blue-600">R$ {lucroEsperadoEstoque.toFixed(2)}</h3>
@@ -111,7 +101,7 @@ export default function Dashboard() {
             <span className="text-3xl mb-1">🛒</span>
             <span className="font-bold text-lg">Vender</span>
           </Link>
-          <Link href="/novo/produtos" className="bg-white p-6 rounded-2xl border border-gray-100 flex flex-col items-center justify-center text-gray-700 shadow-sm active:scale-95 transition-transform">
+          <Link href="/novo-produto" className="bg-white p-6 rounded-2xl border border-gray-100 flex flex-col items-center justify-center text-gray-700 shadow-sm active:scale-95 transition-transform">
             <span className="text-3xl mb-1">📦</span>
             <span className="font-bold text-lg">Adicionar</span>
           </Link>
