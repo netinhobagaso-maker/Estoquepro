@@ -2,13 +2,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import BottomNav from '../../components/BottomNav';
-import { useRouter } from 'next/navigation';
 
-export default function Relatorio() {
-  const router = useRouter();
-  const [vendas, setVendas] = useState([]);
-  const [faturamentoTotal, setFaturamentoTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+export default function Relatorios() {
+  const [vendasHoje, setVendasHoje] = useState({ total: 0, lucro: 0 });
+  const [vendasSemana, setVendasSemana] = useState({ total: 0, lucro: 0 });
+  const [vendasMes, setVendasMes] = useState({ total: 0, lucro: 0 });
 
   useEffect(() => {
     carregarRelatorios();
@@ -16,74 +14,105 @@ export default function Relatorio() {
 
   const carregarRelatorios = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      // Puxa as vendas ordenadas da mais recente para a mais antiga
-      const { data } = await supabase
-        .from('vendas')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+    if (!user) return;
 
-      if (data) {
-        setVendas(data);
-        const total = data.reduce((acc, venda) => acc + Number(venda.total || 0), 0);
-        setFaturamentoTotal(total);
+    // Pega todas as vendas cadastradas pelo usuário
+    const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
+    if (!vendas) return;
+
+    const hoje = new Date();
+    const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+    
+    const inicioSemana = new Date(inicioHoje);
+    inicioSemana.setDate(inicioHoje.getDate() - hoje.getDay()); // Define para o domingo da semana atual
+    
+    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+    let tHoje = 0, lHoje = 0;
+    let tSemana = 0, lSemana = 0;
+    let tMes = 0, lMes = 0;
+
+    vendas.forEach(v => {
+      const dataVenda = new Date(v.created_at);
+      const valor = parseFloat(v.valor_total) || 0;
+      const lucro = parseFloat(v.total_lucro) || 0;
+
+      if (dataVenda >= inicioMes) {
+        tMes += valor; lMes += lucro;
       }
-    }
-    setLoading(false);
+      if (dataVenda >= inicioSemana) {
+        tSemana += valor; lSemana += lucro;
+      }
+      if (dataVenda >= inicioHoje) {
+        tHoje += valor; lHoje += lucro;
+      }
+    });
+
+    setVendasHoje({ total: tHoje, lucro: lHoje });
+    setVendasSemana({ total: tSemana, lucro: lSemana });
+    setVendasMes({ total: tMes, lucro: lMes });
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-[#111827] pt-8 pb-14 px-6 rounded-b-[2rem] shadow-md">
-        <h1 className="text-white text-2xl font-bold flex items-center gap-2">📊 Relatórios</h1>
-        <p className="text-gray-400 text-sm mt-1">Análise de vendas e faturamento</p>
+    <div className="min-h-screen bg-gray-50 pb-32">
+      <div className="bg-[#111827] pt-8 pb-12 px-6 text-white rounded-b-[2rem]">
+        <h1 className="text-2xl font-bold mb-2">📊 Relatórios Inteligentes</h1>
+        <p className="text-gray-400 text-sm">Acompanhe o crescimento do seu negócio.</p>
       </div>
 
-      <div className="-mt-8 px-6 space-y-4">
-        <div className="bg-white p-5 rounded-2xl shadow-lg border border-gray-100">
-          <p className="text-sm text-gray-500 font-bold mb-1">Faturamento Geral</p>
-          <h2 className="text-4xl font-black text-[#10b981]">R$ {faturamentoTotal.toFixed(2)}</h2>
-        </div>
-      </div>
-
-      <div className="px-6 mt-8">
-        <h3 className="font-bold text-gray-800 text-lg mb-4">Histórico de Vendas</h3>
+      <div className="px-6 -mt-6 space-y-4">
         
-        {loading ? (
-          <p className="text-gray-500 text-sm">Carregando relatórios...</p>
-        ) : vendas.length === 0 ? (
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 text-center shadow-sm">
-            <p className="text-gray-500 font-medium">Nenhuma venda registrada ainda.</p>
+        {/* HOJE */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+          <h3 className="text-gray-500 font-bold text-sm mb-4 uppercase tracking-wider flex items-center gap-2">
+            <span>📅</span> Vendas de Hoje
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-[11px] font-bold text-gray-400 mb-1">FATURAMENTO</p>
+              <p className="text-xl font-black text-gray-800">R$ {vendasHoje.total.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-emerald-600 mb-1">LUCRO REAL</p>
+              <p className="text-xl font-black text-[#10b981]">R$ {vendasHoje.lucro.toFixed(2)}</p>
+            </div>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {vendas.map(venda => {
-              const dataVenda = new Date(venda.created_at).toLocaleDateString('pt-BR', {
-                day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-              });
+        </div>
 
-              return (
-                <div key={venda.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-2">
-                  <div className="flex justify-between items-center border-b border-gray-50 pb-2">
-                    <span className="text-xs text-gray-500 font-bold">{dataVenda}</span>
-                    <span className={`text-xs font-bold px-2 py-1 rounded ${venda.forma_pagamento === 'Fiado' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                      {venda.forma_pagamento || 'Dinheiro'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center pt-1">
-                    <div className="text-sm text-gray-600 truncate max-w-[60%]">
-                      {venda.itens ? venda.itens.map(i => `${i.quantidade}x ${i.nome}`).join(', ') : 'Itens não detalhados'}
-                    </div>
-                    <span className="font-black text-lg text-gray-800">
-                      R$ {Number(venda.total).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+        {/* SEMANA */}
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+          <h3 className="text-gray-500 font-bold text-sm mb-4 uppercase tracking-wider flex items-center gap-2">
+            <span>📆</span> Esta Semana
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-[11px] font-bold text-gray-400 mb-1">FATURAMENTO</p>
+              <p className="text-xl font-black text-gray-800">R$ {vendasSemana.total.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-emerald-600 mb-1">LUCRO REAL</p>
+              <p className="text-xl font-black text-[#10b981]">R$ {vendasSemana.lucro.toFixed(2)}</p>
+            </div>
           </div>
-        )}
+        </div>
+
+        {/* MÊS */}
+        <div className="bg-[#111827] p-6 rounded-3xl shadow-md text-white">
+          <h3 className="text-gray-400 font-bold text-sm mb-4 uppercase tracking-wider flex items-center gap-2">
+            <span>🏆</span> Mês Atual
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-[11px] font-bold text-gray-500 mb-1">FATURAMENTO</p>
+              <p className="text-2xl font-black text-white">R$ {vendasMes.total.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] font-bold text-emerald-500 mb-1">LUCRO REAL</p>
+              <p className="text-2xl font-black text-[#10b981]">R$ {vendasMes.lucro.toFixed(2)}</p>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <BottomNav />
