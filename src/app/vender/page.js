@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import BottomNav from '../../components/BottomNav';
+import { supabase } from '@/lib/supabase';
+import BottomNav from '@/components/BottomNav';
 
 export default function Vender() {
   const [produtos, setProdutos] = useState([]);
@@ -21,7 +21,11 @@ export default function Vender() {
     }
   };
 
-  const parseNum = (val) => parseFloat(String(val || 0).replace(',', '.')) || 0;
+  // Função bancária: Garante que tudo seja lido e calculado como decimal (Ex: 2.50)
+  const formatarDinheiro = (valor) => {
+    let numero = parseFloat(String(valor || 0).replace(',', '.')) || 0;
+    return Number(numero.toFixed(2));
+  };
 
   const incrementar = (p) => {
     const qtd = quantidades[p.id] || 0;
@@ -45,19 +49,24 @@ export default function Vender() {
     quantidade: quantidades[p.id]
   }));
 
-  const totalCarrinho = itensCarrinho.reduce((acc, item) => acc + (parseNum(item.preco_venda) * item.quantidade), 0);
-  const lucroCarrinho = itensCarrinho.reduce((acc, item) => acc + (parseNum(item.lucro_unitario) * item.quantidade), 0);
+  // Aplica a formatação estrita nos totais para evitar bugs de dízima do JavaScript
+  const totalCarrinho = formatarDinheiro(
+    itensCarrinho.reduce((acc, item) => acc + (formatarDinheiro(item.preco_venda) * item.quantidade), 0)
+  );
+  
+  const lucroCarrinho = formatarDinheiro(
+    itensCarrinho.reduce((acc, item) => acc + (formatarDinheiro(item.lucro_unitario) * item.quantidade), 0)
+  );
 
   const finalizarVenda = async () => {
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Desconta estoque
     for (const item of itensCarrinho) {
       const novoEstoque = item.quantidade_estoque - item.quantidade;
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
-    // Salva a venda com TOTAL e LUCRO gravados diretamente
+    // Salva exatamente o valor decimal no banco
     const { error } = await supabase.from('vendas').insert({
       user_id: user.id,
       valor_total: totalCarrinho,
@@ -87,7 +96,7 @@ export default function Vender() {
           <div key={produto.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center">
             <div>
               <p className="font-bold text-gray-800">{produto.nome}</p>
-              <p className="text-[#10b981] font-black text-sm">R$ {parseNum(produto.preco_venda).toFixed(2)}</p>
+              <p className="text-[#10b981] font-black text-sm">R$ {formatarDinheiro(produto.preco_venda).toFixed(2)}</p>
               <p className="text-[11px] text-gray-400">Estoque: {produto.quantidade_estoque}</p>
             </div>
             
