@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../lib/supabase';
 import Link from 'next/link';
-import BottomNav from '@/components/BottomNav';
+import BottomNav from '../components/BottomNav';
 
 export default function Dashboard() {
   const [faturamento, setFaturamento] = useState(0);
@@ -97,7 +97,7 @@ export default function Dashboard() {
             <h3 className="text-xl font-black text-gray-800">R$ {valorEstoqueCusto.toFixed(2)}</h3>
           </div>
 
-          {/* BLOCO 4: A SUA IDEIA - LUCRO ESPERADO */}
+          {/* BLOCO 4: LUCRO ESPERADO */}
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
             <p className="text-blue-500 font-bold text-[11px] mb-1 uppercase tracking-wider">Lucro Esperado (Estoque)</p>
             <h3 className="text-xl font-black text-blue-600">R$ {lucroEsperadoEstoque.toFixed(2)}</h3>
