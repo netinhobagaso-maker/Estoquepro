@@ -18,21 +18,22 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. CARREGAR PRODUTOS E MAPEAR CUSTOS POR ID E POR NOME
+    // 1. CARREGAR PRODUTOS E CALCULAR CUSTOS UNITÁRIOS
     const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
     
     let totalEstoque = 0;
     let custoPorId = {};
     let custoPorNome = {};
+    let somaPrecoVenda = 0;
+    let somaCusto = 0;
 
     if (produtos) {
       setListaProdutos(produtos); 
       
       produtos.forEach(produto => {
-        // Tenta pegar o custo unitário direto
         let custoUnitario = Number(produto.custo_unidade || produto.preco_custo || produto.custo || produto.valor_custo || 0);
 
-        // Se não tiver, calcula com base no Gasto Total / Unidades (Ex: 35 / 5 = 7.00)
+        // Se o custo unitário for 0, calcula via Gasto Total / Unidades (Ex: 35 / 5 = 7.00)
         if (custoUnitario === 0) {
           const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || produto.total_gasto || produto.custo_total || 0);
           const qtdCaixas = Number(produto.qtd_caixas || produto.quantidade_caixas || produto.caixas || 1);
@@ -49,15 +50,23 @@ export default function Dashboard() {
         
         if (produto.id) custoPorId[produto.id] = custoUnitario;
         if (produto.nome) custoPorNome[produto.nome.trim().toLowerCase()] = custoUnitario;
+
+        if (precoVenda > 0 && custoUnitario > 0) {
+          somaPrecoVenda += precoVenda;
+          somaCusto += custoUnitario;
+        }
         
         const valorBaseEstoque = custoUnitario > 0 ? custoUnitario : precoVenda;
         totalEstoque += (valorBaseEstoque * qtdEstoque);
       });
     }
     
+    // Razão de custo média para vendas antigas que não possuem itens detalhados (padrão 70% se não houver produtos)
+    const razaoCustoMedia = (somaPrecoVenda > 0 && somaCusto > 0) ? (somaCusto / somaPrecoVenda) : 0.7;
+
     setValorEstoque(totalEstoque); 
 
-    // 2. CARREGAR VENDAS E CALCULAR O LUCRO REAL COM SEGURANÇA MÁXIMA
+    // 2. CARREGAR VENDAS E CALCULAR LUCRO COM PROTEÇÃO TOTAL
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
     
     let totalFat = 0;
@@ -65,13 +74,29 @@ export default function Dashboard() {
 
     if (vendas) {
       vendas.forEach(venda => {
-        totalFat += Number(venda.valor_total || venda.total || 0);
-        
-        if (venda.itens && Array.isArray(venda.itens)) {
+        const valorVenda = Number(venda.valor_total || venda.total || venda.valor || 0);
+        totalFat += valorVenda;
+
+        let custoDestaVenda = 0;
+        let temCustoDefinido = false;
+
+        // A. Tenta ler custo direto na venda se existir
+        if (venda.lucro !== undefined && venda.lucro !== null) {
+          custoDestaVenda = valorVenda - Number(venda.lucro);
+          temCustoDefinido = true;
+        } else if (venda.custo_total !== undefined && venda.custo_total !== null) {
+          custoDestaVenda = Number(venda.custo_total);
+          temCustoDefinido = true;
+        } else if (venda.custo !== undefined && venda.custo !== null) {
+          custoDestaVenda = Number(venda.custo);
+          temCustoDefinido = true;
+        }
+
+        // B. Tenta ler pelos itens da venda
+        if (!temCustoDefinido && venda.itens && Array.isArray(venda.itens) && venda.itens.length > 0) {
+          let custoItens = 0;
           venda.itens.forEach(item => {
             let custoItem = Number(item.custo_unidade || item.preco_custo || item.custo || 0);
-            
-            // Garantia dupla: se faltar no item, busca no mapa de produtos por ID ou por Nome
             if (custoItem === 0) {
               if (item.id && custoPorId[item.id]) {
                 custoItem = custoPorId[item.id];
@@ -79,17 +104,44 @@ export default function Dashboard() {
                 custoItem = custoPorNome[item.nome.trim().toLowerCase()] || 0;
               }
             }
-
             const qtdVendida = Number(item.quantidade || item.qtd || 1);
-            totalCustoVendas += (custoItem * qtdVendida);
+            custoItens += (custoItem * qtdVendida);
           });
+          if (custoItens > 0) {
+            custoDestaVenda = custoItens;
+            temCustoDefinido = true;
+          }
         }
+
+        // C. Tenta ler por produto único na venda
+        if (!temCustoDefinido && (venda.produto_id || venda.produto_nome || venda.nome_produto)) {
+          let custoItem = 0;
+          const pId = venda.produto_id;
+          const pNome = (venda.produto_nome || venda.nome_produto || '').trim().toLowerCase();
+          
+          if (pId && custoPorId[pId]) {
+            custoItem = custoPorId[pId];
+          } else if (pNome && custoPorNome[pNome]) {
+            custoItem = custoPorNome[pNome];
+          }
+          if (custoItem > 0) {
+            const qtdVendida = Number(venda.quantidade || venda.qtd || 1);
+            custoDestaVenda = custoItem * qtdVendida;
+            temCustoDefinido = true;
+          }
+        }
+
+        // D. Fallback para vendas antigas sem nenhum dado de custo gravado
+        if (!temCustoDefinido) {
+          custoDestaVenda = valorVenda * razaoCustoMedia;
+        }
+
+        totalCustoVendas += custoDestaVenda;
       });
     }
 
     setFaturamento(totalFat);
     
-    // Lucro Real = Faturamento - Custo de fábrica dos produtos vendidos
     const lucroCalculado = totalFat - totalCustoVendas;
     setLucro(lucroCalculado >= 0 ? lucroCalculado : 0);
   };
@@ -105,14 +157,14 @@ export default function Dashboard() {
   const reporEstoque = async (produto) => {
     const qtd = window.prompt(`Quantas unidades de "${produto.nome}" você quer adicionar ao estoque?`);
     if (qtd && !isNaN(qtd) && Number(qtd) > 0) {
-      const novaQtd = Number(produto.quantidade_estoque || produto.quantidade || 0) + Number(qtd);
+      const novaQtd = Number(produto.quantidade_estoque || 0) + Number(qtd);
       await supabase.from('produtos').update({ quantidade_estoque: novaQtd }).eq('id', produto.id);
       carregarDados();
     }
   };
 
   const zerarVendas = async () => {
-    const confirmar = window.confirm("⚠️ ATENÇÃO: Deseja apagar TODAS as vendas para reiniciar o faturamento e o lucro com os custos corretos?");
+    const confirmar = window.confirm("⚠️ ATENÇÃO: Deseja apagar TODAS as vendas para reiniciar o histórico?");
     if (confirmar) {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('vendas').delete().eq('user_id', user.id);
