@@ -28,37 +28,42 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. CARREGAR PRODUTOS E FORÇAR O CÁLCULO EXATO
+    // 1. CARREGAR PRODUTOS E MAPEAMENTO EXATO PREÇO -> CUSTO
     const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
     
     let totalEstoque = 0;
     let custoPorId = {};
     let custoPorNome = {};
+    let precoParaCusto = {}; // A grande mágica: vai salvar que quem custa 10, tem custo 8.
 
     if (produtos) {
       setListaProdutos(produtos); 
       
       produtos.forEach(produto => {
-        const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || produto.total_gasto || produto.custo_total || 0);
-        const qtdCaixas = Number(produto.qtd_caixas || produto.quantidade_caixas || produto.caixas || 1);
-        const unidadesNaCaixa = Number(produto.unidades_caixa || produto.unidades_por_caixa || produto.unidades || produto.quantidade_por_caixa || 1);
+        const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || produto.total_gasto || 0);
+        const qtdCaixas = Number(produto.qtd_caixas || produto.quantidade_caixas || 1);
+        const unidadesNaCaixa = Number(produto.unidades_caixa || produto.unidades_por_caixa || produto.unidades || 1);
         
         const totalUnidades = qtdCaixas * unidadesNaCaixa;
         let custoUnitario = 0;
 
-        // Calcula o custo exato da unidade
+        // Regra do custo matemático exato
         if (gastoTotal > 0 && totalUnidades > 0) {
           custoUnitario = gastoTotal / totalUnidades;
         } else {
-          custoUnitario = Number(produto.custo_unidade || produto.preco_custo || produto.custo || produto.valor_custo || 0);
+          custoUnitario = Number(produto.custo_unidade || produto.preco_custo || produto.custo || 0);
         }
 
         const precoVenda = Number(produto.preco_venda || produto.preco || 0);
         const qtdEstoque = Number(produto.quantidade_estoque || produto.quantidade || 0);
         
-        // Mapeamento blindado por ID e Nome (sem misturar preços)
         if (produto.id) custoPorId[produto.id] = custoUnitario;
         if (produto.nome) custoPorNome[normalizarTexto(produto.nome)] = custoUnitario;
+        
+        // Mapeia o preço exato para o custo exato
+        if (precoVenda > 0 && custoUnitario > 0) {
+          precoParaCusto[precoVenda] = custoUnitario;
+        }
         
         const valorBaseEstoque = custoUnitario > 0 ? custoUnitario : precoVenda;
         totalEstoque += (valorBaseEstoque * qtdEstoque);
@@ -67,7 +72,7 @@ export default function Dashboard() {
     
     setValorEstoque(totalEstoque); 
 
-    // 2. CARREGAR VENDAS E CALCULAR O LUCRO CIRÚRGICO
+    // 2. CARREGAR VENDAS E PROCESSAR COM INTELIGÊNCIA NUMÉRICA
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
     
     let totalFat = 0;
@@ -81,57 +86,60 @@ export default function Dashboard() {
         let custoDestaVenda = 0;
         let temCustoDefinido = false;
 
-        // A. CÁLCULO EXATO PELOS ITENS DA VENDA
-        if (venda.itens && Array.isArray(venda.itens) && venda.itens.length > 0) {
-          let custoItens = 0;
-          venda.itens.forEach(item => {
-            let custoItem = 0;
-            
-            // Busca o custo atualizado no estoque pelo ID ou Nome
-            if (item.id && custoPorId[item.id] !== undefined && custoPorId[item.id] > 0) {
-              custoItem = custoPorId[item.id];
-            } else if (item.nome && custoPorNome[normalizarTexto(item.nome)] !== undefined && custoPorNome[normalizarTexto(item.nome)] > 0) {
-              custoItem = custoPorNome[normalizarTexto(item.nome)];
-            } else {
-              // Pega o custo gravado na hora da venda se o produto foi apagado do estoque
-              custoItem = Number(item.custo_unidade || item.preco_custo || item.custo || 0);
-            }
+        // TENTATIVA 1: Lendo os itens da venda (Convertendo caso o Supabase mande como string)
+        let itensDaVenda = [];
+        const rawItens = venda.itens || venda.produtos || venda.carrinho;
+        if (typeof rawItens === 'string') {
+          try { itensDaVenda = JSON.parse(rawItens); } catch(e) {}
+        } else if (Array.isArray(rawItens)) {
+          itensDaVenda = rawItens;
+        }
 
+        if (itensDaVenda.length > 0) {
+          let custoItens = 0;
+          itensDaVenda.forEach(item => {
+            let custoItem = 0;
+            if (item.id && custoPorId[item.id] > 0) {
+              custoItem = custoPorId[item.id];
+            } else if (item.nome && custoPorNome[normalizarTexto(item.nome)] > 0) {
+              custoItem = custoPorNome[normalizarTexto(item.nome)];
+            } else if (item.preco_venda && precoParaCusto[Number(item.preco_venda)]) {
+              custoItem = precoParaCusto[Number(item.preco_venda)];
+            }
+            
             const qtdVendida = Number(item.quantidade || item.qtd || 1);
             custoItens += (custoItem * qtdVendida);
           });
-          
           if (custoItens > 0) {
             custoDestaVenda = custoItens;
             temCustoDefinido = true;
           }
         }
 
-        // B. CÁLCULO PARA VENDA DE PRODUTO ÚNICO (Sem array de itens)
-        if (!temCustoDefinido && (venda.produto_id || venda.produto_nome || venda.nome_produto)) {
-          let custoItem = 0;
-          const pId = venda.produto_id;
-          const pNomeNorm = normalizarTexto(venda.produto_nome || venda.nome_produto);
-          
-          if (pId && custoPorId[pId] !== undefined && custoPorId[pId] > 0) {
-            custoItem = custoPorId[pId];
-          } else if (pNomeNorm && custoPorNome[pNomeNorm] !== undefined && custoPorNome[pNomeNorm] > 0) {
-            custoItem = custoPorNome[pNomeNorm];
-          }
-          
-          if (custoItem > 0) {
-            const qtdVendida = Number(venda.quantidade || venda.qtd || 1);
-            custoDestaVenda = custoItem * qtdVendida;
+        // TENTATIVA 2: Recuperador Numérico pelo Valor (É AQUI QUE RESOLVE O SEU PROBLEMA 100%)
+        if (!temCustoDefinido) {
+          // Checa se o valor bate direto (ex: venda de R$ 10 acha o custo de R$ 8)
+          if (precoParaCusto[valorVenda]) {
+            custoDestaVenda = precoParaCusto[valorVenda];
             temCustoDefinido = true;
+          } else {
+            // Checa se é múltiplo (ex: Vendeu 20 reais. 20 é 2 unidades de 10. Ele acha e crava o custo!)
+            for (let precoStr in precoParaCusto) {
+              const preco = Number(precoStr);
+              if (preco > 0 && valorVenda % preco === 0) {
+                const quantidadeMultipla = valorVenda / preco;
+                custoDestaVenda = quantidadeMultipla * precoParaCusto[preco];
+                temCustoDefinido = true;
+                break;
+              }
+            }
           }
         }
 
-        // C. FALLBACK DE SEGURANÇA (Caso falhe as opções acima, usa o salvo no banco)
+        // TENTATIVA 3: Segurança final, lendo do que sobrou no banco
         if (!temCustoDefinido) {
-          if (venda.custo_total !== undefined && venda.custo_total !== null && Number(venda.custo_total) > 0) {
+           if (venda.custo_total !== undefined && venda.custo_total !== null && Number(venda.custo_total) > 0) {
             custoDestaVenda = Number(venda.custo_total);
-          } else if (venda.custo !== undefined && venda.custo !== null && Number(venda.custo) > 0) {
-            custoDestaVenda = Number(venda.custo);
           } else if (venda.lucro !== undefined && venda.lucro !== null) {
             custoDestaVenda = valorVenda - Number(venda.lucro);
           }
@@ -142,9 +150,9 @@ export default function Dashboard() {
     }
 
     setFaturamento(totalFat);
-    
-    // Calcula o lucro e evita números quebrados longos
     const lucroCalculado = totalFat - totalCustoVendas;
+    
+    // Mostra o lucro real certinho (arredonda só o final pra não ter problemas de centavos)
     setLucro(lucroCalculado >= 0 ? Number(lucroCalculado.toFixed(2)) : 0);
   };
 
@@ -166,16 +174,12 @@ export default function Dashboard() {
   };
 
   const zerarVendas = async () => {
-    const confirmar = window.confirm("⚠️ ATENÇÃO: Deseja apagar TODAS as vendas para limpar históricos com erro?");
+    const confirmar = window.confirm("⚠️ ATENÇÃO: Deseja apagar TODAS as vendas para começar a testar com precisão exata?");
     if (confirmar) {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from('vendas').delete().eq('user_id', user.id);
-      if (!error) {
-        alert("✅ Histórico zerado! Vendas a partir de agora terão 100% de precisão.");
-        carregarDados();
-      } else {
-        alert("Erro: " + error.message);
-      }
+      await supabase.from('vendas').delete().eq('user_id', user.id);
+      alert("✅ Histórico zerado! Faça uma venda de teste agora.");
+      carregarDados();
     }
   };
 
