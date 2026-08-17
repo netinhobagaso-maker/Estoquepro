@@ -1,184 +1,130 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import BottomNav from '../components/BottomNav';
-import { useRouter } from 'next/navigation';
+import { supabase } from '../lib/supabase'; // Ajuste o caminho se necessário (ex: ../../lib/supabase)
+import Link from 'next/link';
+import BottomNav from '../components/BottomNav'; // Ajuste o caminho se necessário
 
-export default function Home() {
-  const router = useRouter();
-  const [produtos, setProdutos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
-  const [produtoModal, setProdutoModal] = useState(null);
-  const [quantidadeAdicionar, setQuantidadeAdicionar] = useState('');
-  
+export default function Dashboard() {
   const [faturamento, setFaturamento] = useState(0);
   const [lucro, setLucro] = useState(0);
-  const [estoqueTotal, setEstoqueTotal] = useState(0);
+  const [valorEstoque, setValorEstoque] = useState(0);
 
   useEffect(() => {
-    carregarDadosDinamicos();
+    carregarDados();
   }, []);
 
-  const carregarDadosDinamicos = async () => {
+  const carregarDados = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data: prodData } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
-      
-      const custosProdutos = {};
-      let valorEstoque = 0;
+    if (!user) return;
 
-      if (prodData) {
-        setProdutos(prodData);
-        prodData.forEach(p => {
-          const custoDoProduto = Number(p.preco_custo || p.custo_unitario || p.custo || p.custo_unidade || p.valor_custo || 0);
-          custosProdutos[p.id] = custoDoProduto;
-          valorEstoque += Number(p.preco_venda || p.preco || 0) * Number(p.quantidade_estoque || 0);
-        });
-        setEstoqueTotal(valorEstoque);
-      }
+    // 1. Buscar Vendas para calcular Faturamento e Lucro
+    const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
+    
+    let totalFaturamento = 0;
+    let custoTotalVendas = 0;
 
-      const { data: vendaData } = await supabase.from('vendas').select('*').eq('user_id', user.id);
-      
-      if (vendaData) {
-        let totalFat = 0;
-        let lucroRealVendas = 0;
-
-        vendaData.forEach(v => {
-          const valorDaVenda = Number(v.total || v.valor_total || 0);
-          if (!isNaN(valorDaVenda)) {
-            totalFat += valorDaVenda;
-          }
-
-          if (v.itens && Array.isArray(v.itens)) {
-            v.itens.forEach(item => {
-              const precoVendaItem = Number(item.preco_venda || item.preco || 0);
-              const qtdItem = Number(item.quantidade || 1);
-              const idDoProduto = item.produto_id || item.id;
-              let custoUnitario = custosProdutos[idDoProduto];
-              
-              if (custoUnitario === undefined || custoUnitario === 0) {
-                 custoUnitario = Number(item.preco_custo || item.custo_unitario || item.custo || 0);
-              }
-              
-              if (!isNaN(precoVendaItem) && !isNaN(custoUnitario)) {
-                lucroRealVendas += (precoVendaItem - custoUnitario) * qtdItem;
-              }
-            });
-          }
-        });
-
-        setFaturamento(totalFat);
-        setLucro(lucroRealVendas);
-      }
+    if (vendas) {
+      vendas.forEach(venda => {
+        totalFaturamento += Number(venda.valor_total || 0);
+        
+        // Itera sobre os itens vendidos para subtrair o preço de custo e achar o LUCRO REAL
+        if (venda.itens && Array.isArray(venda.itens)) {
+          venda.itens.forEach(item => {
+            // Tenta pegar o preco_custo. Se não achar, assume 0
+            const precoCusto = Number(item.preco_custo || item.custo || 0);
+            const quantidade = Number(item.quantidade || 1);
+            
+            // Soma o custo de todos os produtos que saíram na venda
+            custoTotalVendas += (precoCusto * quantidade);
+          });
+        }
+      });
     }
-    setLoading(false);
-  };
 
-  const recarregarEstoque = async () => {
-    if (!quantidadeAdicionar || Number(quantidadeAdicionar) <= 0) return alert("Digite uma quantidade válida.");
-    const novaQtd = Number(produtoModal.quantidade_estoque) + Number(quantidadeAdicionar);
-    const { error } = await supabase.from('produtos').update({ quantidade_estoque: novaQtd }).eq('id', produtoModal.id);
-    if (!error) {
-      alert("Estoque atualizado com sucesso!");
-      setProdutoModal(null);
-      setQuantidadeAdicionar('');
-      carregarDadosDinamicos();
-    }
-  };
+    setFaturamento(totalFaturamento);
+    // LUCRO = Tudo que entrou de dinheiro MENOS o custo de fábrica/atacado dos produtos
+    setLucro(totalFaturamento - custoTotalVendas); 
 
-  const apagarProduto = async (id) => {
-    if (confirm("Deseja apagar este produto?")) {
-      await supabase.from('produtos').delete().eq('id', id);
-      carregarDadosDinamicos();
+    // 2. Buscar Produtos para calcular Valor do Estoque (Dinheiro parado em mercadoria)
+    const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id);
+    
+    let totalEstoque = 0;
+    if (produtos) {
+      produtos.forEach(produto => {
+        const precoCusto = Number(produto.preco_custo || produto.custo || 0);
+        const qtdEstoque = Number(produto.quantidade_estoque || 0);
+        // O valor do estoque é baseado no quanto você pagou por eles (preço de custo)
+        totalEstoque += (precoCusto * qtdEstoque);
+      });
     }
+    
+    setValorEstoque(totalEstoque);
   };
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      <div className="bg-[#111827] pt-8 pb-14 px-6 rounded-b-[2rem]">
-        <h1 className="text-white text-2xl font-bold flex items-center gap-2">Meu Negócio 🏪</h1>
+      {/* Cabeçalho */}
+      <div className="bg-[#111827] pt-12 pb-20 px-6 text-white rounded-b-[2.5rem]">
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          Meu Negócio 🏪
+        </h1>
       </div>
 
-      <div className="-mt-10 px-6 space-y-4">
-        <div className="bg-white p-5 rounded-2xl shadow-md border border-gray-100">
-          <p className="text-sm text-gray-500 font-bold mb-1">Faturamento Total</p>
-          <h2 className="text-4xl font-black text-[#10b981]">R$ {faturamento.toFixed(2)}</h2>
+      {/* Cards de Resumo */}
+      <div className="px-6 -mt-12 space-y-4">
+        {/* Card Faturamento */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-gray-500 font-bold text-sm mb-1">Faturamento Total</p>
+          <h2 className="text-4xl font-black text-[#10b981]">
+            R$ {faturamento.toFixed(2)}
+          </h2>
         </div>
-        
+
+        {/* Cards Menores: Lucro e Estoque */}
         <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white p-4 rounded-2xl shadow-md border border-gray-100">
-            <p className="text-[11px] text-gray-500 font-bold mb-1">Lucro Obtido (Vendas)</p>
-            <h2 className="text-xl font-black text-blue-600">R$ {lucro.toFixed(2)}</h2>
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+            <p className="text-gray-500 font-bold text-xs mb-1">Lucro Obtido (Vendas)</p>
+            <h3 className="text-xl font-black text-blue-600">
+              R$ {lucro.toFixed(2)}
+            </h3>
           </div>
-          <div className="bg-white p-4 rounded-2xl shadow-md border border-gray-100">
-            <p className="text-[11px] text-gray-500 font-bold mb-1">Valor em Estoque</p>
-            <h2 className="text-xl font-black text-red-500">R$ {estoqueTotal.toFixed(2)}</h2>
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+            <p className="text-gray-500 font-bold text-xs mb-1">Valor em Estoque</p>
+            <h3 className="text-xl font-black text-red-600">
+              R$ {valorEstoque.toFixed(2)}
+            </h3>
           </div>
         </div>
       </div>
 
+      {/* Acesso Rápido */}
       <div className="px-6 mt-8">
-        <h3 className="font-bold text-gray-800 text-lg mb-4">Acesso Rápido</h3>
+        <h3 className="text-lg font-bold text-gray-800 mb-4">Acesso Rápido</h3>
         <div className="grid grid-cols-2 gap-4">
-          {/* BOTÕES COM OS LINKS CORRIGIDOS AQUI */}
-          <button onClick={() => router.push('/vender')} className="bg-[#10b981] flex flex-col items-center justify-center p-6 rounded-2xl shadow-md active:scale-95 transition-transform">
-            <span className="text-3xl mb-2">💰</span><span className="text-white font-bold">Vender</span>
-          </button>
-          <button onClick={() => router.push('/produtos/novo')} className="bg-white flex flex-col items-center justify-center p-6 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-transform">
-            <span className="text-3xl mb-2">📦</span><span className="text-gray-800 font-bold">Adicionar</span>
-          </button>
-          <button onClick={() => router.push('/fiados')} className="bg-white flex flex-col items-center justify-center p-6 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-transform">
-            <span className="text-3xl mb-2">📝</span><span className="text-gray-800 font-bold">Fiados</span>
-          </button>
-          <button onClick={() => router.push('/relatorios')} className="bg-white flex flex-col items-center justify-center p-6 rounded-2xl shadow-md border border-gray-100 active:scale-95 transition-transform">
-            <span className="text-3xl mb-2">📊</span><span className="text-gray-800 font-bold">Relatórios</span>
-          </button>
+          
+          <Link href="/vender" className="bg-[#10b981] p-6 rounded-2xl shadow-md flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform">
+            <span className="text-3xl">💰</span>
+            <span className="text-white font-bold text-lg">Vender</span>
+          </Link>
+          
+          <Link href="/novo-produto" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform">
+            <span className="text-3xl">📦</span>
+            <span className="text-gray-700 font-bold text-lg">Adicionar</span>
+          </Link>
+          
+          <Link href="/fiados" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform">
+            <span className="text-3xl">📝</span>
+            <span className="text-gray-700 font-bold text-lg">Fiados</span>
+          </Link>
+          
+          <Link href="/relatorios" className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform">
+            <span className="text-3xl">📊</span>
+            <span className="text-gray-700 font-bold text-lg">Relatórios</span>
+          </Link>
+
         </div>
       </div>
 
-      <div className="px-6 mt-8">
-        <h3 className="font-bold text-gray-800 text-lg mb-4">Estoque</h3>
-        {loading ? <p className="text-gray-500 text-sm">Carregando...</p> : (
-          <div className="space-y-3">
-            {produtos.map(p => {
-              const esgotado = p.quantidade_estoque === 0;
-              const baixo = p.quantidade_estoque > 0 && p.quantidade_estoque <= 5;
-              return (
-                <div key={p.id} className={`p-4 rounded-2xl shadow-sm border flex justify-between items-center ${esgotado ? 'bg-red-50 border-red-300' : baixo ? 'bg-orange-50 border-orange-300' : 'bg-white border-gray-100'}`}>
-                  <div>
-                    <h4 className="font-bold text-gray-800 text-[15px]">{p.nome}</h4>
-                    <p className={`text-[12px] mt-0.5 font-bold ${esgotado ? 'text-red-600' : baixo ? 'text-orange-600' : 'text-gray-500'}`}>
-                      Qtd: {p.quantidade_estoque} 
-                      {esgotado && <span className="ml-2 uppercase bg-red-200 px-2 py-0.5 rounded text-[10px]">🔴 Esgotado</span>}
-                      {baixo && <span className="ml-2 uppercase bg-orange-200 px-2 py-0.5 rounded text-[10px]">⚠️ Baixo</span>}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[#10b981] font-bold text-[15px]">R$ {Number(p.preco_venda).toFixed(2)}</span>
-                    <button onClick={() => setProdutoModal(p)} className="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold active:scale-95 shadow-sm">+ Repor</button>
-                    <button onClick={() => apagarProduto(p.id)} className="text-gray-400 text-lg active:scale-90 ml-1">🗑️</button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {produtoModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl">
-            <h3 className="font-black text-xl mb-1 text-gray-800">Repor Estoque</h3>
-            <p className="text-sm text-gray-500 mb-5">Produto: <span className="font-bold text-gray-800">{produtoModal.nome}</span> (Atual: {produtoModal.quantidade_estoque})</p>
-            <input type="number" placeholder="Quantidade a adicionar..." value={quantidadeAdicionar} onChange={(e) => setQuantidadeAdicionar(e.target.value)} className="w-full p-4 border-2 border-gray-100 rounded-xl mb-6 text-lg bg-gray-50 focus:outline-none focus:border-[#10b981]" />
-            <div className="flex gap-2">
-              <button onClick={() => setProdutoModal(null)} className="flex-1 bg-gray-100 text-gray-600 font-bold p-4 rounded-xl active:scale-95">Cancelar</button>
-              <button onClick={recarregarEstoque} className="flex-1 bg-[#10b981] text-white font-black p-4 rounded-xl active:scale-95 shadow-md">Confirmar</button>
-            </div>
-          </div>
-        </div>
-      )}
       <BottomNav />
     </div>
   );
