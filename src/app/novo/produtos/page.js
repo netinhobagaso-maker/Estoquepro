@@ -1,11 +1,11 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '../../lib/supabase';
-import BottomNav from '../../components/BottomNav';
+import { supabase } from '@/lib/supabase';
+import BottomNav from '@/components/BottomNav';
 
 export default function NovoProduto() {
   const [nome, setNome] = useState('');
-  const [tipo, setTipo] = useState('caixa'); // 'caixa' ou 'unidade'
+  const [tipo, setTipo] = useState('caixa');
   const [qtdCaixas, setQtdCaixas] = useState('');
   const [unidadesPorCaixa, setUnidadesPorCaixa] = useState('');
   const [gastoTotal, setGastoTotal] = useState('');
@@ -17,7 +17,6 @@ export default function NovoProduto() {
     return parseFloat(str) || 0;
   };
 
-  // CÁLCULOS MATEMÁTICOS DIRETOS
   const numQtdCaixas = parseNum(qtdCaixas);
   const numUnidadesPorCaixa = parseNum(unidadesPorCaixa);
   const numGastoTotal = parseNum(gastoTotal);
@@ -109,7 +108,6 @@ export default function NovoProduto() {
           <input type="text" placeholder="Ex: 5.00" value={precoVendaUnitario} onChange={e => setPrecoVendaUnitario(e.target.value)} className="w-full p-3 rounded-xl border border-gray-200 text-gray-800 font-semibold outline-none focus:border-[#10b981]" required />
         </div>
 
-        {/* RESUMO AUTOMÁTICO */}
         <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-100 space-y-2 mt-4">
           <h3 className="font-bold text-emerald-900 text-sm flex items-center gap-1 border-b border-emerald-200 pb-2">
             📊 Resumo Automático:
