@@ -18,7 +18,7 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. CARREGAR PRODUTOS (Para exibir o estoque e descobrir o custo unitário matemático)
+    // 1. CARREGAR PRODUTOS E CALCULAR O CUSTO UNITÁRIO EXATO (Igual ao seu print)
     const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
     
     let totalEstoque = 0;
@@ -28,18 +28,15 @@ export default function Dashboard() {
       setListaProdutos(produtos); 
       
       produtos.forEach(produto => {
-        // Tenta achar o custo unitário salvo direto
         let custoUnitario = Number(produto.custo_unidade || produto.preco_custo || produto.custo || 0);
 
-        // A MÁGICA BASEADA NO SEU PRINT:
-        // Se o custo unitário for 0, ele calcula pegando o Gasto Total e dividindo pelas Unidades do Fardo
+        // Se o custo unitário direto não existir, calcula via Gasto Total / Unidades Totais (Ex: 35 / 5 = 7.00)
         if (custoUnitario === 0) {
-          const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || produto.total_gasto || produto.custo_total || 0);
-          const qtdCaixas = Number(produto.qtd_caixas || produto.quantidade_caixas || 1);
-          const unidadesNaCaixa = Number(produto.unidades_caixa || produto.unidades_por_caixa || produto.unidades || 1);
+          const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || 0);
+          const qtdCaixas = Number(produto.qtd_caixas || 1);
+          const unidadesNaCaixa = Number(produto.unidades_caixa || produto.unidades || 1);
           
           if (gastoTotal > 0) {
-            // Exemplo do print: 35 / (1 * 5) = 7.00
             custoUnitario = gastoTotal / (qtdCaixas * unidadesNaCaixa);
           }
         }
@@ -47,10 +44,8 @@ export default function Dashboard() {
         const precoVenda = Number(produto.preco_venda || 0);
         const qtdEstoque = Number(produto.quantidade_estoque || produto.quantidade || 0);
         
-        // Salva o custo real na memória para usar no cálculo das vendas
         custoPorProduto[produto.id] = custoUnitario;
         
-        // Valor da grana parada no estoque
         const valorBaseEstoque = custoUnitario > 0 ? custoUnitario : precoVenda;
         totalEstoque += (valorBaseEstoque * qtdEstoque);
       });
@@ -58,7 +53,7 @@ export default function Dashboard() {
     
     setValorEstoque(totalEstoque); 
 
-    // 2. CARREGAR VENDAS E APLICAR A MATEMÁTICA DO LUCRO
+    // 2. CARREGAR VENDAS E CALCULAR LUCRO REAL SUBTRAINDO OS CUSTOS
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
     
     let totalFat = 0;
@@ -66,15 +61,11 @@ export default function Dashboard() {
 
     if (vendas) {
       vendas.forEach(venda => {
-        // Exemplo do print: Faturamento = R$ 50,00
         totalFat += Number(venda.valor_total || venda.total || 0);
         
-        // Vamos subtrair o preço de custo de cada item vendido (Exemplo do print: 5 unidades x 7,00 = 35,00)
         if (venda.itens && Array.isArray(venda.itens)) {
           venda.itens.forEach(item => {
             const custoItemBanco = Number(item.custo_unidade || item.preco_custo || item.custo || 0);
-            
-            // Pega o custo gravado na venda OU busca o custo recalculado do produto
             const custoReal = custoItemBanco > 0 ? custoItemBanco : (custoPorProduto[item.id] || 0);
             const qtdVendida = Number(item.quantidade || 1);
             
@@ -85,7 +76,6 @@ export default function Dashboard() {
     }
 
     setFaturamento(totalFat);
-    // Lucro = 50 - 35 = 15. Exatamente como no seu print!
     setLucro(totalFat - totalCustoVendas);
   };
 
@@ -107,15 +97,15 @@ export default function Dashboard() {
   };
 
   const zerarVendas = async () => {
-    const confirmar = window.confirm("⚠️ ATENÇÃO: Tem certeza que deseja apagar TODAS as suas vendas? O faturamento e o lucro ficarão zerados.");
+    const confirmar = window.confirm("⚠️ ATENÇÃO: Deseja apagar TODAS as vendas para começar a testar com os custos corretos?");
     if (confirmar) {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('vendas').delete().eq('user_id', user.id);
       if (!error) {
-        alert("✅ Histórico de vendas zerado com sucesso!");
+        alert("✅ Histórico de vendas zerado!");
         carregarDados();
       } else {
-        alert("Erro ao apagar: " + error.message);
+        alert("Erro: " + error.message);
       }
     }
   };
@@ -212,9 +202,6 @@ export default function Dashboard() {
         >
           🗑️ Zerar Faturamento e Vendas
         </button>
-        <p className="text-center text-xs text-gray-400 mt-2">
-          Use isso para limpar os testes. Seu estoque NÃO será apagado.
-        </p>
       </div>
 
       <BottomNav />
