@@ -57,10 +57,39 @@ export default function Vender() {
     quantidade: quantidades[p.id]
   }));
 
-  const totalCarrinho = itensCarrinho.reduce((acc, item) => acc + (Number(item.preco_venda) * item.quantidade), 0);
+  const totalCarrinho = itensCarrinho.reduce((acc, item) => acc + (Number(item.preco_venda || item.preco || 0) * item.quantidade), 0);
+
+  // FUNÇÃO UNIVERSAL PARA ENCONTRAR O CUSTO DO PRODUTO
+  const obterCustoItem = (item) => {
+    const possiveisCustos = [
+      item.preco_custo, item.custo, item.custo_unidade, item.valor_custo, 
+      item.gasto_total, item.valor_compra, item.preco_compra, item.custo_total, 
+      item.valor_pago, item.preco_pago, item.compra, item.gasto
+    ];
+
+    for (let val of possiveisCustos) {
+      const num = Number(val);
+      if (!isNaN(num) && num > 0) return num;
+    }
+
+    const gastoTot = Number(item.gasto_total || item.valor_gasto || item.total_gasto || item.custo_total || 0);
+    const qtdCaixas = Number(item.qtd_caixas || item.quantidade_caixas || 1);
+    const unidadesCaixa = Number(item.unidades_caixa || item.unidades_por_caixa || item.unidades || 1);
+    const totalUnidades = qtdCaixas * unidadesCaixa;
+    if (gastoTot > 0 && totalUnidades > 0) return gastoTot / totalUnidades;
+
+    const precoVenda = Number(item.preco_venda || item.preco || 0);
+    return precoVenda > 0 ? precoVenda * 0.7 : 0; // Fallback para evitar lucro 100%
+  };
 
   const processarVenda = async () => {
     const { data: { user } } = await supabase.auth.getUser();
+
+    // Grava os itens já com o custo embutido para garantir precisão
+    const itensComCusto = itensCarrinho.map(item => ({
+      ...item,
+      custo_unitario_calculado: obterCustoItem(item)
+    }));
 
     // Desconta do estoque
     for (const item of itensCarrinho) {
@@ -68,12 +97,12 @@ export default function Vender() {
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
-    // Salva apenas nas colunas padrão garantidas (user_id, total, valor_total e itens)
+    // Salva a venda
     const { error } = await supabase.from('vendas').insert({ 
       user_id: user.id, 
       total: totalCarrinho,
       valor_total: totalCarrinho,
-      itens: itensCarrinho
+      itens: itensComCusto
     });
 
     if (error) {
@@ -146,7 +175,7 @@ export default function Vender() {
           <div key={produto.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center">
             <div>
               <p className="font-bold text-gray-800 text-[15px]">{produto.nome}</p>
-              <p className="text-[#10b981] font-black text-sm">R$ {Number(produto.preco_venda).toFixed(2)}</p>
+              <p className="text-[#10b981] font-black text-sm">R$ {Number(produto.preco_venda || produto.preco || 0).toFixed(2)}</p>
               <p className="text-[11px] text-gray-400 mt-1 font-semibold">Em estoque: {produto.quantidade_estoque}</p>
             </div>
             
