@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase'; // Ajuste o caminho se necessário (ex: ../../lib/supabase)
+import { supabase } from '../lib/supabase';
 import Link from 'next/link';
-import BottomNav from '../components/BottomNav'; // Ajuste o caminho se necessário
+import BottomNav from '../components/BottomNav';
 
 export default function Dashboard() {
   const [faturamento, setFaturamento] = useState(0);
@@ -17,7 +17,33 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. Buscar Vendas para calcular Faturamento e Lucro
+    // 1. CARREGAR ESTOQUE PRIMEIRO
+    const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id);
+    
+    let totalEstoque = 0;
+    let custoPorProduto = {}; // Guarda o custo de cada produto para usar no cálculo do lucro
+
+    if (produtos) {
+      produtos.forEach(produto => {
+        // Tenta achar o custo seja qual for o nome da coluna que está no Supabase
+        const custo = Number(produto.custo_unidade || produto.preco_custo || produto.custo || 0);
+        const precoVenda = Number(produto.preco_venda || 0);
+        
+        // Pega a quantidade de estoque corretamente
+        const qtdEstoque = Number(produto.quantidade_estoque || produto.quantidade || 0);
+        
+        custoPorProduto[produto.id] = custo;
+
+        // Se o custo for zero no banco, calcula o valor do estoque baseado no preço de venda
+        const valorBaseEstoque = custo > 0 ? custo : precoVenda;
+        
+        totalEstoque += (valorBaseEstoque * qtdEstoque);
+      });
+    }
+    
+    setValorEstoque(totalEstoque); // Restaura o valor do estoque na tela!
+
+    // 2. CARREGAR VENDAS (FATURAMENTO E LUCRO)
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
     
     let totalFaturamento = 0;
@@ -25,40 +51,30 @@ export default function Dashboard() {
 
     if (vendas) {
       vendas.forEach(venda => {
-        totalFaturamento += Number(venda.valor_total || 0);
+        const valorDaVenda = Number(venda.valor_total || venda.total || 0);
+        totalFaturamento += valorDaVenda;
         
-        // Itera sobre os itens vendidos para subtrair o preço de custo e achar o LUCRO REAL
+        let custoDessaVenda = 0;
+
         if (venda.itens && Array.isArray(venda.itens)) {
           venda.itens.forEach(item => {
-            // Tenta pegar o preco_custo. Se não achar, assume 0
-            const precoCusto = Number(item.preco_custo || item.custo || 0);
+            // Tenta pegar o custo salvo na venda, ou busca do produto atual
+            const custoItem = Number(item.custo_unidade || item.preco_custo || item.custo || custoPorProduto[item.id] || 0);
             const quantidade = Number(item.quantidade || 1);
             
-            // Soma o custo de todos os produtos que saíram na venda
-            custoTotalVendas += (precoCusto * quantidade);
+            custoDessaVenda += (custoItem * quantidade);
           });
         }
+
+        custoTotalVendas += custoDessaVenda;
       });
     }
 
     setFaturamento(totalFaturamento);
-    // LUCRO = Tudo que entrou de dinheiro MENOS o custo de fábrica/atacado dos produtos
-    setLucro(totalFaturamento - custoTotalVendas); 
-
-    // 2. Buscar Produtos para calcular Valor do Estoque (Dinheiro parado em mercadoria)
-    const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id);
     
-    let totalEstoque = 0;
-    if (produtos) {
-      produtos.forEach(produto => {
-        const precoCusto = Number(produto.preco_custo || produto.custo || 0);
-        const qtdEstoque = Number(produto.quantidade_estoque || 0);
-        // O valor do estoque é baseado no quanto você pagou por eles (preço de custo)
-        totalEstoque += (precoCusto * qtdEstoque);
-      });
-    }
-    
-    setValorEstoque(totalEstoque);
+    // Calcula o lucro real. Se der algum bug nos custos, ele não deixa o lucro ficar negativo.
+    const lucroCalculado = totalFaturamento - custoTotalVendas;
+    setLucro(lucroCalculado > 0 ? lucroCalculado : totalFaturamento);
   };
 
   return (
@@ -83,7 +99,7 @@ export default function Dashboard() {
         {/* Cards Menores: Lucro e Estoque */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-            <p className="text-gray-500 font-bold text-xs mb-1">Lucro Obtido (Vendas)</p>
+            <p className="text-gray-500 font-bold text-xs mb-1">Lucro Obtido</p>
             <h3 className="text-xl font-black text-blue-600">
               R$ {lucro.toFixed(2)}
             </h3>
