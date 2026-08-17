@@ -14,6 +14,30 @@ export default function Dashboard() {
     carregarDados();
   }, []);
 
+  const obterCustoItem = (item) => {
+    if (item.custo_unitario_calculado > 0) return Number(item.custo_unitario_calculado);
+
+    const possiveisCustos = [
+      item.preco_custo, item.custo, item.custo_unidade, item.valor_custo, 
+      item.gasto_total, item.valor_compra, item.preco_compra, item.custo_total, 
+      item.valor_pago, item.preco_pago, item.compra, item.gasto
+    ];
+
+    for (let val of possiveisCustos) {
+      const num = Number(val);
+      if (!isNaN(num) && num > 0) return num;
+    }
+
+    const gastoTot = Number(item.gasto_total || item.valor_gasto || item.total_gasto || item.custo_total || 0);
+    const qtdCaixas = Number(item.qtd_caixas || item.quantidade_caixas || 1);
+    const unidadesCaixa = Number(item.unidades_caixa || item.unidades_por_caixa || item.unidades || 1);
+    const totalUnidades = qtdCaixas * unidadesCaixa;
+    if (gastoTot > 0 && totalUnidades > 0) return gastoTot / totalUnidades;
+
+    const precoVenda = Number(item.preco_venda || item.preco || 0);
+    return precoVenda > 0 ? precoVenda * 0.7 : 0;
+  };
+
   const carregarDados = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -28,31 +52,20 @@ export default function Dashboard() {
       setListaProdutos(produtos); 
       
       produtos.forEach(produto => {
-        const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || produto.total_gasto || produto.custo_total || 0);
-        const qtdCaixas = Number(produto.qtd_caixas || produto.quantidade_caixas || 1);
-        const unidadesNaCaixa = Number(produto.unidades_caixa || produto.unidades_por_caixa || produto.unidades || 1);
-        const totalUnidades = qtdCaixas * unidadesNaCaixa;
-        
-        let custoUnitario = 0;
-        if (gastoTotal > 0 && totalUnidades > 0) {
-          custoUnitario = gastoTotal / totalUnidades;
-        } else {
-          custoUnitario = Number(produto.custo_unidade || produto.preco_custo || produto.custo || 0);
-        }
-
+        const custoUni = obterCustoItem(produto);
         const precoVenda = Number(produto.preco_venda || produto.preco || 0);
         const qtdEstoque = Number(produto.quantidade_estoque || produto.quantidade || 0);
         
-        if (produto.id) custoPorId[produto.id] = custoUnitario;
+        if (produto.id) custoPorId[produto.id] = custoUni;
         
-        const valorBaseEstoque = custoUnitario > 0 ? custoUnitario : precoVenda;
+        const valorBaseEstoque = custoUni > 0 ? custoUni : precoVenda;
         totalEstoque += (valorBaseEstoque * qtdEstoque);
       });
     }
     
     setValorEstoque(totalEstoque); 
 
-    // 2. CARREGAR VENDAS E CALCULAR O LUCRO EXATO DOS ITENS SALVOS
+    // 2. CARREGAR VENDAS E CALCULAR LUCRO
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
     
     let totalFat = 0;
@@ -75,25 +88,14 @@ export default function Dashboard() {
 
         if (itensDaVenda.length > 0) {
           itensDaVenda.forEach(item => {
-            const gastoTotal = Number(item.gasto_total || item.valor_gasto || item.total_gasto || item.custo_total || 0);
-            const qtdCaixas = Number(item.qtd_caixas || item.quantidade_caixas || 1);
-            const unidadesNaCaixa = Number(item.unidades_caixa || item.unidades_por_caixa || item.unidades || 1);
-            const totalUnidades = qtdCaixas * unidadesNaCaixa;
-            
-            let custoUni = 0;
-            if (gastoTotal > 0 && totalUnidades > 0) {
-              custoUni = gastoTotal / totalUnidades;
-            } else if (item.id && custoPorId[item.id] > 0) {
+            let custoUni = obterCustoItem(item);
+            if (custoUni === 0 && item.id && custoPorId[item.id] > 0) {
               custoUni = custoPorId[item.id];
-            } else {
-              custoUni = Number(item.custo_unidade || item.preco_custo || item.custo || 0);
             }
-
             const qtdVendida = Number(item.quantidade || item.qtd || 1);
             custoDestaVenda += (custoUni * qtdVendida);
           });
         } else {
-          // Fallback caso não tenha itens detalhados
           custoDestaVenda = valorVenda * 0.7;
         }
 
