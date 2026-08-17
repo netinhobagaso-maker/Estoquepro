@@ -10,116 +10,91 @@ export default function Dashboard() {
   const [valorEstoque, setValorEstoque] = useState(0);
   const [listaProdutos, setListaProdutos] = useState([]);
 
-  // MESMA FUNÇÃO BLINDADA AQUI NO DASHBOARD
-  const parseNumber = (val) => {
-    if (val === null || val === undefined || val === '') return 0;
-    if (typeof val === 'number') return val;
-    let str = String(val);
-    if (str.includes('.') && str.includes(',')) {
-      str = str.split('.').join('');
-    }
-    str = str.replace(',', '.');
-    const num = parseFloat(str);
-    return isNaN(num) ? 0 : num;
-  };
-
   useEffect(() => {
     carregarDados();
   }, []);
-
-  const obterCustoItem = (item) => {
-    if (parseNumber(item.custo_unitario_calculado) > 0) return parseNumber(item.custo_unitario_calculado);
-
-    const possiveisCustos = [
-      item.preco_custo, item.custo, item.custo_unidade, item.valor_custo, 
-      item.gasto_total, item.valor_compra, item.preco_compra, item.custo_total, 
-      item.valor_pago, item.preco_pago, item.compra, item.gasto
-    ];
-
-    for (let val of possiveisCustos) {
-      const num = parseNumber(val);
-      if (num > 0) return num;
-    }
-
-    const gastoTot = parseNumber(item.gasto_total || item.valor_gasto || item.total_gasto);
-    const qtdCaixas = parseNumber(item.qtd_caixas || item.quantidade_caixas) || 1;
-    const unidadesCaixa = parseNumber(item.unidades_caixa || item.unidades_por_caixa || item.unidades) || 1;
-    const totalUnidades = qtdCaixas * unidadesCaixa;
-    if (gastoTot > 0 && totalUnidades > 0) return gastoTot / totalUnidades;
-
-    const precoVenda = parseNumber(item.preco_venda || item.preco);
-    return precoVenda > 0 ? precoVenda * 0.7 : 0;
-  };
 
   const carregarDados = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. CARREGAR PRODUTOS E CALCULAR ESTOQUE
+    // 1. CARREGAR PRODUTOS DO BANCO
     const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
     
-    let totalEstoque = 0;
-    let custoPorId = {};
+    let mapaDeCustos = {};
+    let totalEstoqueCalculado = 0;
 
     if (produtos) {
-      setListaProdutos(produtos); 
+      setListaProdutos(produtos);
       
-      produtos.forEach(produto => {
-        const custoUni = obterCustoItem(produto);
-        const precoVenda = parseNumber(produto.preco_venda || produto.preco);
-        const qtdEstoque = parseNumber(produto.quantidade_estoque || produto.quantidade);
+      produtos.forEach(p => {
+        // Pega o custo (tenta os nomes mais comuns) ou 0
+        let custo = parseFloat(p.preco_custo || p.custo || p.valor_custo || p.preco_compra) || 0;
+        let precoVenda = parseFloat(p.preco_venda || p.preco) || 0;
         
-        if (produto.id) custoPorId[produto.id] = custoUni;
+        // REGRA DE SEGURANÇA: Se o produto não tem custo cadastrado, assume que custou a metade do preço de venda
+        if (custo === 0) {
+          custo = precoVenda * 0.5;
+        }
         
-        const valorBaseEstoque = custoUni > 0 ? custoUni : precoVenda;
-        totalEstoque += (valorBaseEstoque * qtdEstoque);
+        mapaDeCustos[p.id] = custo; // Salva o custo para usar nas vendas depois
+        
+        let qtd = parseFloat(p.quantidade_estoque || p.quantidade) || 0;
+        totalEstoqueCalculado += (custo * qtd);
       });
+      
+      setValorEstoque(totalEstoqueCalculado);
     }
-    
-    setValorEstoque(totalEstoque); 
 
-    // 2. CARREGAR VENDAS E CALCULAR LUCRO
+    // 2. CARREGAR VENDAS E APLICAR A MATEMÁTICA SIMPLES (FATURAMENTO - CUSTO)
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
     
-    let totalFat = 0;
-    let totalLucroVendas = 0;
+    let faturamentoTotal = 0;
+    let custoTotalDeTodasAsVendas = 0;
 
     if (vendas) {
       vendas.forEach(venda => {
-        const valorVenda = parseNumber(venda.valor_total || venda.total || venda.valor);
-        totalFat += valorVenda;
+        let valorDaVenda = parseFloat(venda.valor_total || venda.total) || 0;
+        faturamentoTotal += valorDaVenda;
 
         let custoDestaVenda = 0;
-        let itensDaVenda = [];
-        const rawItens = venda.itens || venda.produtos || venda.carrinho;
+        let itens = [];
         
-        if (typeof rawItens === 'string') {
-          try { itensDaVenda = JSON.parse(rawItens); } catch(e) {}
-        } else if (Array.isArray(rawItens)) {
-          itensDaVenda = rawItens;
-        }
+        // Tenta ler os itens vendidos de forma segura
+        try {
+          if (typeof venda.itens === 'string') itens = JSON.parse(venda.itens);
+          else if (Array.isArray(venda.itens)) itens = venda.itens;
+        } catch(e) {}
 
-        if (itensDaVenda.length > 0) {
-          itensDaVenda.forEach(item => {
-            let custoUni = obterCustoItem(item);
-            if (custoUni === 0 && item.id && custoPorId[item.id] > 0) {
-              custoUni = custoPorId[item.id];
+        if (itens.length > 0) {
+          itens.forEach(item => {
+            let qtd = parseFloat(item.quantidade || 1);
+            let custoUnitario = parseFloat(item.custo_unitario_calculado || item.preco_custo || item.custo) || 0;
+            
+            // Se o item vendido não salvou o custo, puxa do nosso mapa de produtos
+            if (custoUnitario === 0 && item.id && mapaDeCustos[item.id]) {
+              custoUnitario = mapaDeCustos[item.id];
             }
-            const qtdVendida = parseNumber(item.quantidade || item.qtd || 1);
-            custoDestaVenda += (custoUni * qtdVendida);
+            
+            // Se AINDA for zero, aplica a regra de segurança de 50%
+            if (custoUnitario === 0) {
+              custoUnitario = parseFloat(item.preco_venda || item.preco || 0) * 0.5;
+            }
+
+            custoDestaVenda += (custoUnitario * qtd);
           });
         } else {
-          custoDestaVenda = valorVenda * 0.7;
+          // Se a venda não tem itens por algum erro antigo, assume 50% de custo
+          custoDestaVenda = valorDaVenda * 0.5;
         }
 
-        // Soma real do lucro, sem gambiarras
-        const lucroDaVenda = valorVenda - custoDestaVenda;
-        totalLucroVendas += lucroDaVenda; 
+        custoTotalDeTodasAsVendas += custoDestaVenda;
       });
     }
 
-    setFaturamento(totalFat);
-    setLucro(Number(totalLucroVendas.toFixed(2)));
+    // 3. A SOMA SIMPLES E FINAL
+    setFaturamento(faturamentoTotal);
+    setLucro(faturamentoTotal - custoTotalDeTodasAsVendas);
   };
 
   const apagarProduto = async (id) => {
@@ -132,8 +107,8 @@ export default function Dashboard() {
 
   const reporEstoque = async (produto) => {
     const qtd = window.prompt(`Quantas unidades de "${produto.nome}" você quer adicionar ao estoque?`);
-    if (qtd && !isNaN(qtd) && parseNumber(qtd) > 0) {
-      const novaQtd = parseNumber(produto.quantidade_estoque) + parseNumber(qtd);
+    if (qtd && !isNaN(qtd) && parseFloat(qtd) > 0) {
+      const novaQtd = parseFloat(produto.quantidade_estoque || 0) + parseFloat(qtd);
       await supabase.from('produtos').update({ quantidade_estoque: novaQtd }).eq('id', produto.id);
       carregarDados();
     }
