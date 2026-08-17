@@ -17,31 +17,26 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. CARREGAR ESTOQUE PRIMEIRO
+    // 1. CARREGAR ESTOQUE
     const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id);
     
     let totalEstoque = 0;
-    let custoPorProduto = {}; // Guarda o custo de cada produto para usar no cálculo do lucro
+    let custoPorProduto = {}; 
 
     if (produtos) {
       produtos.forEach(produto => {
-        // Tenta achar o custo seja qual for o nome da coluna que está no Supabase
         const custo = Number(produto.custo_unidade || produto.preco_custo || produto.custo || 0);
         const precoVenda = Number(produto.preco_venda || 0);
-        
-        // Pega a quantidade de estoque corretamente
         const qtdEstoque = Number(produto.quantidade_estoque || produto.quantidade || 0);
         
         custoPorProduto[produto.id] = custo;
-
-        // Se o custo for zero no banco, calcula o valor do estoque baseado no preço de venda
         const valorBaseEstoque = custo > 0 ? custo : precoVenda;
         
         totalEstoque += (valorBaseEstoque * qtdEstoque);
       });
     }
     
-    setValorEstoque(totalEstoque); // Restaura o valor do estoque na tela!
+    setValorEstoque(totalEstoque); 
 
     // 2. CARREGAR VENDAS (FATURAMENTO E LUCRO)
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
@@ -58,10 +53,8 @@ export default function Dashboard() {
 
         if (venda.itens && Array.isArray(venda.itens)) {
           venda.itens.forEach(item => {
-            // Tenta pegar o custo salvo na venda, ou busca do produto atual
             const custoItem = Number(item.custo_unidade || item.preco_custo || item.custo || custoPorProduto[item.id] || 0);
             const quantidade = Number(item.quantidade || 1);
-            
             custoDessaVenda += (custoItem * quantidade);
           });
         }
@@ -72,13 +65,31 @@ export default function Dashboard() {
 
     setFaturamento(totalFaturamento);
     
-    // Calcula o lucro real. Se der algum bug nos custos, ele não deixa o lucro ficar negativo.
+    // Lucro real = Faturamento - Custos
     const lucroCalculado = totalFaturamento - custoTotalVendas;
-    setLucro(lucroCalculado > 0 ? lucroCalculado : totalFaturamento);
+    setLucro(lucroCalculado); // Agora ele nunca mais vai repetir o faturamento aqui
+  };
+
+  // FUNÇÃO NOVA: ZERAR VENDAS
+  const zerarVendas = async () => {
+    const confirmar = window.confirm("⚠️ ATENÇÃO: Tem certeza que deseja apagar TODAS as suas vendas? O faturamento e o lucro ficarão zerados. O seu estoque NÃO será alterado.");
+    
+    if (confirmar) {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const { error } = await supabase.from('vendas').delete().eq('user_id', user.id);
+      
+      if (error) {
+        alert("Erro ao tentar apagar: " + error.message);
+      } else {
+        alert("✅ Histórico de vendas zerado com sucesso!");
+        carregarDados(); // Atualiza a tela para mostrar R$ 0.00
+      }
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="min-h-screen bg-gray-50 pb-28">
       {/* Cabeçalho */}
       <div className="bg-[#111827] pt-12 pb-20 px-6 text-white rounded-b-[2.5rem]">
         <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -89,7 +100,7 @@ export default function Dashboard() {
       {/* Cards de Resumo */}
       <div className="px-6 -mt-12 space-y-4">
         {/* Card Faturamento */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative">
           <p className="text-gray-500 font-bold text-sm mb-1">Faturamento Total</p>
           <h2 className="text-4xl font-black text-[#10b981]">
             R$ {faturamento.toFixed(2)}
@@ -139,6 +150,19 @@ export default function Dashboard() {
           </Link>
 
         </div>
+      </div>
+
+      {/* Botão de Zerar Vendas (Deixei no final da página para evitar cliques acidentais) */}
+      <div className="px-6 mt-8 mb-4">
+        <button 
+          onClick={zerarVendas}
+          className="w-full bg-red-50 text-red-600 border border-red-200 p-4 rounded-xl font-bold flex justify-center items-center gap-2 active:scale-95 transition-transform"
+        >
+          🗑️ Zerar Faturamento e Vendas
+        </button>
+        <p className="text-center text-xs text-gray-400 mt-2">
+          Use isso apenas se quiser limpar os testes. Seu estoque não será apagado.
+        </p>
       </div>
 
       <BottomNav />
