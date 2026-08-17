@@ -2,34 +2,12 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import BottomNav from '../../components/BottomNav';
-import { useRouter } from 'next/navigation';
 
 export default function Vender() {
-  const router = useRouter();
   const [produtos, setProdutos] = useState([]);
-  const [clientesFiado, setClientesFiado] = useState([]);
   const [busca, setBusca] = useState('');
-  
   const [quantidades, setQuantidades] = useState({});
-  
   const [modalPagamento, setModalPagamento] = useState(false);
-  const [modalFiado, setModalFiado] = useState(false);
-  
-  const [clienteSelecionado, setClienteSelecionado] = useState('');
-  const [novoClienteNome, setNovoClienteNome] = useState('');
-
-  // FUNÇÃO BLINDADA PARA LER QUALQUER NÚMERO (COM VÍRGULA OU PONTO)
-  const parseNumber = (val) => {
-    if (val === null || val === undefined || val === '') return 0;
-    if (typeof val === 'number') return val;
-    let str = String(val);
-    if (str.includes('.') && str.includes(',')) {
-      str = str.split('.').join(''); // Remove ponto de milhar se houver
-    }
-    str = str.replace(',', '.');
-    const num = parseFloat(str);
-    return isNaN(num) ? 0 : num;
-  };
 
   useEffect(() => {
     carregarDados();
@@ -38,30 +16,27 @@ export default function Vender() {
   const carregarDados = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      const { data: prodData } = await supabase.from('produtos')
-        .select('*').eq('user_id', user.id).gt('quantidade_estoque', 0).order('nome');
-      if (prodData) setProdutos(prodData);
-
-      const { data: cliData } = await supabase.from('fiados')
-        .select('*').eq('user_id', user.id).order('nome_cliente');
-      if (cliData) setClientesFiado(cliData);
+      const { data } = await supabase.from('produtos').select('*').eq('user_id', user.id).gt('quantidade_estoque', 0).order('nome');
+      if (data) setProdutos(data);
     }
   };
 
-  const incrementar = (produto) => {
-    const qtdAtual = quantidades[produto.id] || 0;
-    if (qtdAtual >= produto.quantidade_estoque) return alert("Estoque insuficiente!");
-    setQuantidades({ ...quantidades, [produto.id]: qtdAtual + 1 });
+  const parseNum = (val) => parseFloat(String(val || 0).replace(',', '.')) || 0;
+
+  const incrementar = (p) => {
+    const qtd = quantidades[p.id] || 0;
+    if (qtd >= p.quantidade_estoque) return alert("Estoque insuficiente!");
+    setQuantidades({ ...quantidades, [p.id]: qtd + 1 });
   };
 
-  const decrementar = (produto) => {
-    const qtdAtual = quantidades[produto.id] || 0;
-    if (qtdAtual <= 1) {
-      const novasQtds = { ...quantidades };
-      delete novasQtds[produto.id];
-      setQuantidades(novasQtds);
+  const decrementar = (p) => {
+    const qtd = quantidades[p.id] || 0;
+    if (qtd <= 1) {
+      const copy = { ...quantidades };
+      delete copy[p.id];
+      setQuantidades(copy);
     } else {
-      setQuantidades({ ...quantidades, [produto.id]: qtdAtual - 1 });
+      setQuantidades({ ...quantidades, [p.id]: qtd - 1 });
     }
   };
 
@@ -70,207 +45,93 @@ export default function Vender() {
     quantidade: quantidades[p.id]
   }));
 
-  // Usa a função blindada para somar o carrinho com exatidão
-  const totalCarrinho = itensCarrinho.reduce((acc, item) => acc + (parseNumber(item.preco_venda || item.preco) * item.quantidade), 0);
+  const totalCarrinho = itensCarrinho.reduce((acc, item) => acc + (parseNum(item.preco_venda) * item.quantidade), 0);
+  const lucroCarrinho = itensCarrinho.reduce((acc, item) => acc + (parseNum(item.lucro_unitario) * item.quantidade), 0);
 
-  const obterCustoItem = (item) => {
-    const possiveisCustos = [
-      item.preco_custo, item.custo, item.custo_unidade, item.valor_custo, 
-      item.valor_compra, item.preco_compra, item.custo_total, item.valor_pago, 
-      item.preco_pago, item.compra, item.gasto
-    ];
-
-    for (let val of possiveisCustos) {
-      const num = parseNumber(val);
-      if (num > 0) return num;
-    }
-
-    const gastoTot = parseNumber(item.gasto_total || item.valor_gasto || item.total_gasto);
-    const qtdCaixas = parseNumber(item.qtd_caixas || item.quantidade_caixas) || 1;
-    const unidadesCaixa = parseNumber(item.unidades_caixa || item.unidades_por_caixa || item.unidades) || 1;
-    const totalUnidades = qtdCaixas * unidadesCaixa;
-    if (gastoTot > 0 && totalUnidades > 0) return gastoTot / totalUnidades;
-
-    const precoVenda = parseNumber(item.preco_venda || item.preco);
-    return precoVenda > 0 ? precoVenda * 0.7 : 0; 
-  };
-
-  const processarVenda = async () => {
+  const finalizarVenda = async () => {
     const { data: { user } } = await supabase.auth.getUser();
 
-    const itensComCusto = itensCarrinho.map(item => ({
-      ...item,
-      custo_unitario_calculado: obterCustoItem(item)
-    }));
-
+    // Desconta estoque
     for (const item of itensCarrinho) {
       const novoEstoque = item.quantidade_estoque - item.quantidade;
       await supabase.from('produtos').update({ quantidade_estoque: novoEstoque }).eq('id', item.id);
     }
 
-    const { error } = await supabase.from('vendas').insert({ 
-      user_id: user.id, 
-      total: totalCarrinho,
+    // Salva a venda com TOTAL e LUCRO gravados diretamente
+    const { error } = await supabase.from('vendas').insert({
+      user_id: user.id,
       valor_total: totalCarrinho,
-      itens: itensComCusto
+      total_lucro: lucroCarrinho,
+      itens: itensCarrinho
     });
 
     if (error) {
-      alert("ERRO AO SALVAR VENDA: " + error.message);
-      return false; 
-    }
-    
-    return true; 
-  };
-
-  const finalizarVendaComum = async () => {
-    const sucesso = await processarVenda();
-    if (sucesso) {
-      alert(`✅ Venda registrada com sucesso!`);
-      limparTela();
-    }
-  };
-
-  const finalizarFiado = async () => {
-    if (!clienteSelecionado && !novoClienteNome) return alert("Selecione ou digite o nome do cliente.");
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    const descItens = itensCarrinho.map(item => `${item.quantidade}x ${item.nome}`).join(' + ');
-    let clienteId = clienteSelecionado;
-    
-    if (clienteId === 'novo') {
-      const { data: novoCliente, error } = await supabase.from('fiados').insert({
-        user_id: user.id, nome_cliente: novoClienteNome, valor: totalCarrinho, status: 'pendente',
-        historico: [{ data: new Date().toISOString(), desc: descItens, val: totalCarrinho }]
-      }).select().single();
-      
-      if (error) return alert("Erro ao criar cliente: " + error.message);
-      clienteId = novoCliente.id;
+      alert("Erro ao gravar venda: " + error.message);
     } else {
-      const clienteData = clientesFiado.find(c => c.id === clienteId);
-      const historicoAtual = clienteData.status === 'pago' ? [] : (clienteData.historico || []);
-      const novoHistorico = [...historicoAtual, { data: new Date().toISOString(), desc: descItens, val: totalCarrinho }];
-      const novoValor = (clienteData.status === 'pago' ? 0 : parseNumber(clienteData.valor)) + totalCarrinho;
-      
-      await supabase.from('fiados').update({ 
-        valor: novoValor, status: 'pendente', historico: novoHistorico 
-      }).eq('id', clienteId);
+      alert("✅ Venda finalizada com sucesso!");
+      setQuantidades({});
+      setModalPagamento(false);
+      carregarDados();
     }
-
-    const sucesso = await processarVenda();
-    if (sucesso) {
-      alert("📝 Pendurado com sucesso! Fatura do cliente atualizada.");
-      limparTela();
-    }
-  };
-
-  const limparTela = () => {
-    setQuantidades({});
-    setModalPagamento(false);
-    setModalFiado(false);
-    setClienteSelecionado('');
-    setNovoClienteNome('');
-    carregarDados();
   };
 
   return (
     <div className="min-h-screen bg-gray-50 pb-32">
-      <div className="bg-[#111827] pt-8 pb-6 px-6 text-white rounded-b-[2rem] shadow-md">
+      <div className="bg-[#111827] pt-8 pb-6 px-6 text-white rounded-b-[2rem]">
         <h1 className="text-2xl font-bold mb-4">🛒 Ponto de Venda</h1>
-        <input type="text" placeholder="Buscar produto..." value={busca} onChange={(e) => setBusca(e.target.value)} className="w-full p-3 rounded-xl bg-gray-800 text-white placeholder-gray-400 border border-gray-700 outline-none focus:border-[#10b981]" />
+        <input type="text" placeholder="Buscar produto..." value={busca} onChange={(e) => setBusca(e.target.value)} className="w-full p-3 rounded-xl bg-gray-800 text-white border border-gray-700 outline-none" />
       </div>
 
       <div className="px-6 mt-6 space-y-3">
         {produtos.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase())).map(produto => (
           <div key={produto.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center">
             <div>
-              <p className="font-bold text-gray-800 text-[15px]">{produto.nome}</p>
-              <p className="text-[#10b981] font-black text-sm">R$ {parseNumber(produto.preco_venda || produto.preco).toFixed(2)}</p>
-              <p className="text-[11px] text-gray-400 mt-1 font-semibold">Em estoque: {produto.quantidade_estoque}</p>
+              <p className="font-bold text-gray-800">{produto.nome}</p>
+              <p className="text-[#10b981] font-black text-sm">R$ {parseNum(produto.preco_venda).toFixed(2)}</p>
+              <p className="text-[11px] text-gray-400">Estoque: {produto.quantidade_estoque}</p>
             </div>
             
             <div className="flex items-center gap-3">
               {quantidades[produto.id] ? (
                 <>
-                  <button onClick={() => decrementar(produto)} className="w-8 h-8 flex justify-center items-center bg-red-100 text-red-600 rounded-full font-black text-lg active:scale-90">-</button>
+                  <button onClick={() => decrementar(produto)} className="w-8 h-8 bg-red-100 text-red-600 rounded-full font-black text-lg">-</button>
                   <span className="font-black text-gray-800 w-4 text-center">{quantidades[produto.id]}</span>
-                  <button onClick={() => incrementar(produto)} className="w-8 h-8 flex justify-center items-center bg-[#10b981] text-white rounded-full font-black text-lg active:scale-90">+</button>
+                  <button onClick={() => incrementar(produto)} className="w-8 h-8 bg-[#10b981] text-white rounded-full font-black text-lg">+</button>
                 </>
               ) : (
-                <button onClick={() => incrementar(produto)} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs active:scale-95 border border-gray-200">
-                  Adicionar
-                </button>
+                <button onClick={() => incrementar(produto)} className="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl font-bold text-xs">Adicionar</button>
               )}
             </div>
           </div>
         ))}
-        {produtos.length === 0 && <p className="text-center text-gray-500 text-sm mt-10">Nenhum produto em estoque.</p>}
       </div>
 
       {totalCarrinho > 0 && (
         <div className="fixed bottom-[80px] left-0 right-0 px-6 z-40">
-          <button onClick={() => setModalPagamento(true)} className="w-full bg-[#10b981] text-white p-4 rounded-2xl font-black text-lg shadow-[0_10px_20px_rgba(16,185,129,0.3)] flex justify-between items-center active:scale-95 transition-transform">
-            <div className="flex items-center gap-2">
-              <span className="bg-white/20 px-2 py-1 rounded-lg text-sm">{itensCarrinho.reduce((a, b) => a + b.quantidade, 0)} itens</span>
-              <span>Cobrar</span>
-            </div>
+          <button onClick={() => setModalPagamento(true)} className="w-full bg-[#10b981] text-white p-4 rounded-2xl font-black text-lg shadow-lg flex justify-between items-center">
+            <span>Cobrar ({itensCarrinho.reduce((a, b) => a + b.quantidade, 0)})</span>
             <span>R$ {totalCarrinho.toFixed(2)}</span>
           </button>
         </div>
       )}
 
-      {modalPagamento && !modalFiado && (
+      {modalPagamento && (
         <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-50">
-          <div className="bg-white w-full rounded-t-3xl p-6 pb-28 animate-slide-up">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-black text-xl text-gray-800">Finalizar Venda</h3>
-              <button onClick={() => setModalPagamento(false)} className="text-gray-400 font-bold text-xl px-2">×</button>
+          <div className="bg-white w-full rounded-t-3xl p-6 pb-28">
+            <h3 className="font-black text-xl text-gray-800 mb-4">Finalizar Venda</h3>
+            <div className="bg-gray-50 p-4 rounded-2xl mb-4 space-y-1">
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>Total a cobrar:</span>
+                <span className="font-bold text-gray-800">R$ {totalCarrinho.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-emerald-600 font-bold">
+                <span>Lucro real desta venda:</span>
+                <span>R$ {lucroCarrinho.toFixed(2)}</span>
+              </div>
             </div>
-            
-            <div className="bg-gray-50 p-4 rounded-2xl mb-6 flex justify-between items-center">
-              <span className="text-gray-500 font-bold text-sm">Total a cobrar</span>
-              <span className="text-3xl font-black text-[#10b981]">R$ {totalCarrinho.toFixed(2)}</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <button onClick={() => finalizarVendaComum()} className="p-4 bg-[#10b981] text-white rounded-2xl font-black shadow-md active:scale-95 transition-transform text-sm">
-                💵 Receber
-              </button>
-              <button onClick={() => setModalFiado(true)} className="p-4 bg-blue-600 text-white rounded-2xl font-black shadow-md active:scale-95 transition-transform text-sm">
-                📝 Pendurar (Fiado)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modalFiado && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-xl mb-20">
-            <h3 className="font-black text-xl mb-1 text-gray-800 flex items-center gap-2">📝 Lançar Fiado</h3>
-            <p className="text-sm text-gray-500 mb-5">Valor: <span className="font-bold text-[#10b981]">R$ {totalCarrinho.toFixed(2)}</span></p>
-            
-            <label className="text-xs font-bold text-gray-600 block mb-2">Para qual cliente?</label>
-            <select 
-              className="w-full p-4 border-2 border-gray-100 rounded-xl mb-4 text-sm bg-gray-50 outline-none focus:border-blue-500 font-semibold text-gray-700"
-              value={clienteSelecionado}
-              onChange={(e) => setClienteSelecionado(e.target.value)}
-            >
-              <option value="" disabled>Selecione um cliente...</option>
-              <option value="novo">➕ NOVO CLIENTE</option>
-              {clientesFiado.map(c => (
-                <option key={c.id} value={c.id}>{c.nome_cliente}</option>
-              ))}
-            </select>
-
-            {clienteSelecionado === 'novo' && (
-              <input type="text" placeholder="Nome do novo cliente..." value={novoClienteNome} onChange={(e) => setNovoClienteNome(e.target.value)} className="w-full p-4 border-2 border-gray-100 rounded-xl mb-6 text-sm bg-gray-50 outline-none focus:border-blue-500 font-bold text-gray-800" />
-            )}
-            
-            <div className="flex gap-2 mt-2">
-              <button onClick={() => setModalFiado(false)} className="flex-1 bg-gray-100 text-gray-600 font-bold p-4 rounded-xl active:scale-95">Voltar</button>
-              <button onClick={finalizarFiado} className="flex-[2] bg-blue-600 text-white font-black p-4 rounded-xl active:scale-95 shadow-md">Confirmar Fiado</button>
-            </div>
+            <button onClick={finalizarVenda} className="w-full p-4 bg-[#10b981] text-white rounded-2xl font-black text-center">
+              💵 Confirmar Recebimento
+            </button>
           </div>
         </div>
       )}
