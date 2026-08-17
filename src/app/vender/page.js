@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
-import BottomNav from '@/components/BottomNav';
+import { supabase } from '../../lib/supabase';
+import BottomNav from '../../components/BottomNav';
 
 export default function Vender() {
   const [produtos, setProdutos] = useState([]);
