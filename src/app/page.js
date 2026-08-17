@@ -10,12 +10,25 @@ export default function Dashboard() {
   const [valorEstoque, setValorEstoque] = useState(0);
   const [listaProdutos, setListaProdutos] = useState([]);
 
+  // MESMA FUNÇÃO BLINDADA AQUI NO DASHBOARD
+  const parseNumber = (val) => {
+    if (val === null || val === undefined || val === '') return 0;
+    if (typeof val === 'number') return val;
+    let str = String(val);
+    if (str.includes('.') && str.includes(',')) {
+      str = str.split('.').join('');
+    }
+    str = str.replace(',', '.');
+    const num = parseFloat(str);
+    return isNaN(num) ? 0 : num;
+  };
+
   useEffect(() => {
     carregarDados();
   }, []);
 
   const obterCustoItem = (item) => {
-    if (item.custo_unitario_calculado > 0) return Number(item.custo_unitario_calculado);
+    if (parseNumber(item.custo_unitario_calculado) > 0) return parseNumber(item.custo_unitario_calculado);
 
     const possiveisCustos = [
       item.preco_custo, item.custo, item.custo_unidade, item.valor_custo, 
@@ -24,17 +37,17 @@ export default function Dashboard() {
     ];
 
     for (let val of possiveisCustos) {
-      const num = Number(val);
-      if (!isNaN(num) && num > 0) return num;
+      const num = parseNumber(val);
+      if (num > 0) return num;
     }
 
-    const gastoTot = Number(item.gasto_total || item.valor_gasto || item.total_gasto || item.custo_total || 0);
-    const qtdCaixas = Number(item.qtd_caixas || item.quantidade_caixas || 1);
-    const unidadesCaixa = Number(item.unidades_caixa || item.unidades_por_caixa || item.unidades || 1);
+    const gastoTot = parseNumber(item.gasto_total || item.valor_gasto || item.total_gasto);
+    const qtdCaixas = parseNumber(item.qtd_caixas || item.quantidade_caixas) || 1;
+    const unidadesCaixa = parseNumber(item.unidades_caixa || item.unidades_por_caixa || item.unidades) || 1;
     const totalUnidades = qtdCaixas * unidadesCaixa;
     if (gastoTot > 0 && totalUnidades > 0) return gastoTot / totalUnidades;
 
-    const precoVenda = Number(item.preco_venda || item.preco || 0);
+    const precoVenda = parseNumber(item.preco_venda || item.preco);
     return precoVenda > 0 ? precoVenda * 0.7 : 0;
   };
 
@@ -53,8 +66,8 @@ export default function Dashboard() {
       
       produtos.forEach(produto => {
         const custoUni = obterCustoItem(produto);
-        const precoVenda = Number(produto.preco_venda || produto.preco || 0);
-        const qtdEstoque = Number(produto.quantidade_estoque || produto.quantidade || 0);
+        const precoVenda = parseNumber(produto.preco_venda || produto.preco);
+        const qtdEstoque = parseNumber(produto.quantidade_estoque || produto.quantidade);
         
         if (produto.id) custoPorId[produto.id] = custoUni;
         
@@ -73,7 +86,7 @@ export default function Dashboard() {
 
     if (vendas) {
       vendas.forEach(venda => {
-        const valorVenda = Number(venda.valor_total || venda.total || venda.valor || 0);
+        const valorVenda = parseNumber(venda.valor_total || venda.total || venda.valor);
         totalFat += valorVenda;
 
         let custoDestaVenda = 0;
@@ -92,15 +105,16 @@ export default function Dashboard() {
             if (custoUni === 0 && item.id && custoPorId[item.id] > 0) {
               custoUni = custoPorId[item.id];
             }
-            const qtdVendida = Number(item.quantidade || item.qtd || 1);
+            const qtdVendida = parseNumber(item.quantidade || item.qtd || 1);
             custoDestaVenda += (custoUni * qtdVendida);
           });
         } else {
           custoDestaVenda = valorVenda * 0.7;
         }
 
-        const lucroItem = valorVenda - custoDestaVenda;
-        totalLucroVendas += (lucroItem >= 0 ? lucroItem : 0);
+        // Soma real do lucro, sem gambiarras
+        const lucroDaVenda = valorVenda - custoDestaVenda;
+        totalLucroVendas += lucroDaVenda; 
       });
     }
 
@@ -118,8 +132,8 @@ export default function Dashboard() {
 
   const reporEstoque = async (produto) => {
     const qtd = window.prompt(`Quantas unidades de "${produto.nome}" você quer adicionar ao estoque?`);
-    if (qtd && !isNaN(qtd) && Number(qtd) > 0) {
-      const novaQtd = Number(produto.quantidade_estoque || 0) + Number(qtd);
+    if (qtd && !isNaN(qtd) && parseNumber(qtd) > 0) {
+      const novaQtd = parseNumber(produto.quantidade_estoque) + parseNumber(qtd);
       await supabase.from('produtos').update({ quantidade_estoque: novaQtd }).eq('id', produto.id);
       carregarDados();
     }
