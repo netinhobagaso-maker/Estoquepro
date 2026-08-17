@@ -28,13 +28,13 @@ export default function Dashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // 1. CARREGAR PRODUTOS E MAPEAMENTO EXATO DE CUSTOS E PREÇOS
+    // 1. CARREGAR PRODUTOS E FORÇAR O CÁLCULO EXATO (Gasto Total / Unidades Totais)
     const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', user.id).order('nome');
     
     let totalEstoque = 0;
     let custoPorId = {};
     let custoPorNome = {};
-    let precoParaCusto = {}; // Associa o preço de venda exato ao custo unitário do produto
+    let precoParaCusto = {}; 
     let somaPrecoVenda = 0;
     let somaCusto = 0;
 
@@ -42,18 +42,18 @@ export default function Dashboard() {
       setListaProdutos(produtos); 
       
       produtos.forEach(produto => {
-        let custoUnitario = Number(produto.custo_unidade || produto.preco_custo || produto.custo || produto.valor_custo || 0);
+        const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || produto.total_gasto || produto.custo_total || 0);
+        const qtdCaixas = Number(produto.qtd_caixas || produto.quantidade_caixas || produto.caixas || 1);
+        const unidadesNaCaixa = Number(produto.unidades_caixa || produto.unidades_por_caixa || produto.unidades || produto.quantidade_por_caixa || 1);
+        
+        const totalUnidades = qtdCaixas * unidadesNaCaixa;
+        let custoUnitario = 0;
 
-        // Se o custo unitário direto for 0, calcula com base no Gasto Total / Unidades (Ex: 35 / 5 = 7.00)
-        if (custoUnitario === 0) {
-          const gastoTotal = Number(produto.gasto_total || produto.valor_gasto || produto.total_gasto || produto.custo_total || 0);
-          const qtdCaixas = Number(produto.qtd_caixas || produto.quantidade_caixas || produto.caixas || 1);
-          const unidadesNaCaixa = Number(produto.unidades_caixa || produto.unidades_por_caixa || produto.unidades || produto.quantidade_por_caixa || 1);
-          
-          const totalUnidades = qtdCaixas * unidadesNaCaixa;
-          if (gastoTotal > 0 && totalUnidades > 0) {
-            custoUnitario = gastoTotal / totalUnidades;
-          }
+        // REGRA DE OURO: Sempre recalcula exato pelo Gasto Total / Unidades (Ex: 35 / 5 = 7.00)
+        if (gastoTotal > 0 && totalUnidades > 0) {
+          custoUnitario = gastoTotal / totalUnidades;
+        } else {
+          custoUnitario = Number(produto.custo_unidade || produto.preco_custo || produto.custo || produto.valor_custo || 0);
         }
 
         const precoVenda = Number(produto.preco_venda || produto.preco || 0);
@@ -74,11 +74,11 @@ export default function Dashboard() {
       });
     }
     
-    const razaoMediaProdutos = (somaPrecoVenda > 0 && somaCusto > 0) ? (somaCusto / somaPrecoVenda) : 0.8;
+    const razaoMediaProdutos = (somaPrecoVenda > 0 && somaCusto > 0) ? (somaCusto / somaPrecoVenda) : 0.7;
 
     setValorEstoque(totalEstoque); 
 
-    // 2. CARREGAR VENDAS E CALCULAR LUCRO COM PRECISÃO ABSOLUTA
+    // 2. CARREGAR VENDAS E CALCULAR O LUCRO REAL AO VIVO (Garantindo que não há distorção)
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
     
     let totalFat = 0;
@@ -92,34 +92,21 @@ export default function Dashboard() {
         let custoDestaVenda = 0;
         let temCustoDefinido = false;
 
-        // A. Se a venda já tem lucro ou custo gravado diretamente
-        if (venda.lucro !== undefined && venda.lucro !== null) {
-          custoDestaVenda = valorVenda - Number(venda.lucro);
-          temCustoDefinido = true;
-        } else if (venda.custo_total !== undefined && venda.custo_total !== null) {
-          custoDestaVenda = Number(venda.custo_total);
-          temCustoDefinido = true;
-        } else if (venda.custo !== undefined && venda.custo !== null) {
-          custoDestaVenda = Number(venda.custo);
-          temCustoDefinido = true;
-        }
-
-        // B. Itens detalhados da venda
+        // A. Prioridade 1: Calcular pelos itens detalhados da venda usando o custo atualizado dos produtos
         if (!temCustoDefinido && venda.itens && Array.isArray(venda.itens) && venda.itens.length > 0) {
           let custoItens = 0;
           venda.itens.forEach(item => {
-            let custoItem = Number(item.custo_unidade || item.preco_custo || item.custo || 0);
-            
-            if (custoItem === 0) {
-              if (item.id && custoPorId[item.id]) {
-                custoItem = custoPorId[item.id];
-              } else if (item.nome) {
-                const nomeItemNorm = normalizarTexto(item.nome);
-                custoItem = custoPorNome[nomeItemNorm] || 0;
-              }
+            let custoItem = 0;
+            if (item.id && custoPorId[item.id]) {
+              custoItem = custoPorId[item.id];
+            } else if (item.nome) {
+              custoItem = custoPorNome[normalizarTexto(item.nome)] || 0;
             }
             if (custoItem === 0 && item.preco_venda && precoParaCusto[Number(item.preco_venda)]) {
               custoItem = precoParaCusto[Number(item.preco_venda)];
+            }
+            if (custoItem === 0) {
+              custoItem = Number(item.custo_unidade || item.preco_custo || item.custo || 0);
             }
 
             const qtdVendida = Number(item.quantidade || item.qtd || 1);
@@ -131,7 +118,7 @@ export default function Dashboard() {
           }
         }
 
-        // C. Produto único associado à venda
+        // B. Prioridade 2: Produto único associado à venda
         if (!temCustoDefinido && (venda.produto_id || venda.produto_nome || venda.nome_produto)) {
           let custoItem = 0;
           const pId = venda.produto_id;
@@ -149,13 +136,22 @@ export default function Dashboard() {
           }
         }
 
-        // D. Identifica o custo exato se o valor da venda bater com o preço de cadastro
+        // C. Prioridade 3: Identifica o custo exato se o valor da venda bater com o preço de cadastro
         if (!temCustoDefinido && precoParaCusto[valorVenda]) {
           custoDestaVenda = precoParaCusto[valorVenda];
           temCustoDefinido = true;
         }
 
-        // E. Fallback final calibrado com base nos produtos reais
+        // D. Se não achou de forma dinâmica, lê o lucro salvo no banco como último recurso
+        if (!temCustoDefinido && venda.lucro !== undefined && venda.lucro !== null) {
+          custoDestaVenda = valorVenda - Number(venda.lucro);
+          temCustoDefinido = true;
+        } else if (!temCustoDefinido && venda.custo_total !== undefined && venda.custo_total !== null) {
+          custoDestaVenda = Number(venda.custo_total);
+          temCustoDefinido = true;
+        }
+
+        // E. Fallback final se nada mais funcionar
         if (!temCustoDefinido) {
           custoDestaVenda = valorVenda * razaoMediaProdutos;
         }
@@ -188,7 +184,7 @@ export default function Dashboard() {
   };
 
   const zerarVendas = async () => {
-    const confirmar = window.confirm("⚠️ ATENÇÃO: Deseja apagar TODAS as vendas para reiniciar o histórico com os cálculos exatos?");
+    const confirmar = window.confirm("⚠️ ATENÇÃO: Deseja apagar TODAS as vendas para reiniciar o histórico com os cálculos exatos limpos?");
     if (confirmar) {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('vendas').delete().eq('user_id', user.id);
