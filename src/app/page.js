@@ -30,7 +30,20 @@ export default function Home() {
   }, [router]);
 
   const buscarDados = async (userId) => {
-    // 1. Buscar Produtos e calcular Valor em Estoque e Lucro Esperado automaticamente
+    // 🧠 LÓGICA DE SUPERMERCADO: Conversor inteligente que força qualquer texto ou vírgula a virar número para o cálculo não falhar
+    const converterParaNumero = (valor) => {
+      if (!valor) return 0;
+      if (typeof valor === 'number') return valor;
+      
+      let texto = String(valor).replace(/[R$\s]/g, ''); // Remove 'R$' e espaços
+      if (texto.includes(',')) {
+        texto = texto.replace(/\./g, ''); // Remove o ponto de milhar se houver
+        texto = texto.replace(',', '.');  // Troca a vírgula brasileira por ponto decimal
+      }
+      return Number(texto) || 0;
+    };
+
+    // 1. LER ESTOQUE E CALCULAR AUTOMATICAMENTE
     const { data: produtos } = await supabase
       .from('produtos')
       .select('*')
@@ -41,21 +54,22 @@ export default function Home() {
       let lucroEsp = 0;
 
       produtos.forEach(p => {
-        // Captura flexível de quantidade e preços
-        const qtd = Number(p.quantidade ?? p.qtd ?? p.estoque ?? 0);
-        const precoVenda = Number(p.preco_venda ?? p.preco ?? p.valor ?? 0);
-        const precoCusto = Number(p.preco_custo ?? p.custo ?? 0);
+        // Puxa os dados ignorando erros de digitação de colunas
+        const qtd = converterParaNumero(p.quantidade || p.qtd || p.estoque);
+        const precoVenda = converterParaNumero(p.preco_venda || p.preco || p.valor);
+        const precoCusto = converterParaNumero(p.preco_custo || p.custo);
 
-        // Se o custo não foi cadastrado, considera o valor de venda para o total em estoque
-        const valorUnitarioEstoque = precoCusto > 0 ? precoCusto : precoVenda;
+        // Se o cliente não preencheu o preço de custo, o valor do estoque é baseado no preço de venda
+        const valorBaseParaEstoque = precoCusto > 0 ? precoCusto : precoVenda;
         
-        estoqueTotal += valorUnitarioEstoque * qtd;
+        // Faz o cálculo automático invisível (Preço × Quantidade)
+        estoqueTotal += (valorBaseParaEstoque * qtd);
 
-        // Se houver preço de custo, calcula a margem exata; senão, estima com base na venda
+        // Calcula o lucro que virá dessas vendas
         if (precoCusto > 0 && precoVenda > precoCusto) {
-          lucroEsp += (precoVenda - precoCusto) * qtd;
+          lucroEsp += ((precoVenda - precoCusto) * qtd);
         } else {
-          lucroEsp += precoVenda * qtd;
+          lucroEsp += (precoVenda * qtd);
         }
       });
 
@@ -63,7 +77,7 @@ export default function Home() {
       setLucroEsperado(lucroEsp);
     }
 
-    // 2. Buscar Vendas e calcular Faturamento e Lucro Real
+    // 2. LER VENDAS REAIS JÁ FEITAS
     const { data: vendas } = await supabase
       .from('vendas')
       .select('*')
@@ -74,11 +88,8 @@ export default function Home() {
       let lucroR = 0;
 
       vendas.forEach(v => {
-        const valorVenda = Number(v.valor_total ?? v.total ?? v.valor ?? 0);
-        const valorLucro = Number(v.lucro ?? v.lucro_total ?? 0);
-
-        fatTotal += valorVenda;
-        lucroR += valorLucro;
+        fatTotal += converterParaNumero(v.valor_total || v.total || v.valor);
+        lucroR += converterParaNumero(v.lucro || v.lucro_total);
       });
 
       setFaturamento(fatTotal);
@@ -86,10 +97,10 @@ export default function Home() {
     }
   };
 
-  // Botão alterado: ZERA APENAS AS VENDAS (Relatórios e Lucro Real), PRESERVANDO O ESTOQUE
+  // 🗑️ BOTÃO EXCLUSIVO PARA ZERAR VENDAS (MANTÉM ESTOQUE INTACTO)
   const zerarHistoricoVendas = async () => {
     const confirmar = window.confirm(
-      "⚠️ Deseja zerar apenas o histórico de vendas e relatórios?\n\nSeus produtos e o estoque NÃO serão apagados."
+      "⚠️ ATENÇÃO: Deseja zerar seu histórico de VENDAS e RELATÓRIOS?\n\nNão se preocupe, seus produtos e estoque continuarão salvos!"
     );
     if (!confirmar) return;
 
@@ -97,10 +108,10 @@ export default function Home() {
       const { error } = await supabase.from('vendas').delete().eq('user_id', user.id);
 
       if (error) {
-        alert("Erro ao zerar vendas: " + error.message);
+        alert("Erro ao zerar relatórios: " + error.message);
       } else {
-        buscarDados(user.id);
-        alert("✅ Histórico de vendas zerado! Seu estoque continua intacto.");
+        buscarDados(user.id); // Atualiza os números da tela na mesma hora
+        alert("✅ Histórico de Vendas zerado! Relatórios reiniciados.");
       }
     }
   };
@@ -124,7 +135,7 @@ export default function Home() {
       </div>
       
       <div className="px-6 mt-6 space-y-4">
-        {/* Vendas (Realizado) */}
+        {/* Métricas de VENDAS FEITAS */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100">
             <p className="text-xs text-gray-500 font-bold mb-1">Faturamento Obtido</p>
@@ -136,7 +147,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Estoque (Projetado) */}
+        {/* Métricas do ESTOQUE ATUAL */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100">
             <p className="text-xs text-gray-500 font-bold mb-1">Valor em Estoque</p>
@@ -148,7 +159,7 @@ export default function Home() {
           </div>
         </div>
         
-        {/* Ações Principais */}
+        {/* Botões Grandes */}
         <div className="grid grid-cols-2 gap-4 mt-6">
           <Link href="/vender" className="bg-[#009ee3] text-white p-4 rounded-2xl shadow-md flex items-center justify-center gap-2 font-bold active:scale-95 transition-transform">
             <span className="text-xl">🛒</span> Vender
@@ -158,7 +169,7 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* Botão de Zerar Relatório/Vendas */}
+        {/* O Botão de Limpar Relatórios */}
         <button 
           onClick={zerarHistoricoVendas}
           className="w-full mt-8 bg-red-50 text-red-600 border border-red-200 p-4 rounded-2xl font-bold flex justify-center items-center gap-2 active:scale-95 transition-transform"
