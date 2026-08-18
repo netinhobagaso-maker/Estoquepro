@@ -16,24 +16,23 @@ export default function Relatorios() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // Pega todas as vendas cadastradas pelo usuário
     const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', user.id);
     if (!vendas) return;
 
-    const hoje = new Date();
-    const inicioHoje = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+    const agora = new Date();
+    const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
     
     const inicioSemana = new Date(inicioHoje);
-    inicioSemana.setDate(inicioHoje.getDate() - hoje.getDay()); // Define para o domingo da semana atual
+    inicioSemana.setDate(inicioHoje.getDate() - agora.getDay()); 
     
-    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
 
     let tHoje = 0, lHoje = 0;
     let tSemana = 0, lSemana = 0;
     let tMes = 0, lMes = 0;
 
     vendas.forEach(v => {
-      const dataVenda = new Date(v.created_at);
+      const dataVenda = new Date(v.created_at); 
       const valor = parseFloat(v.valor_total) || 0;
       const lucro = parseFloat(v.total_lucro) || 0;
 
@@ -56,8 +55,8 @@ export default function Relatorios() {
   return (
     <div className="min-h-screen bg-gray-50 pb-32">
       <div className="bg-[#111827] pt-8 pb-12 px-6 text-white rounded-b-[2rem]">
-        <h1 className="text-2xl font-bold mb-2">📊 Relatórios Inteligentes</h1>
-        <p className="text-gray-400 text-sm">Acompanhe o crescimento do seu negócio.</p>
+        <h1 className="text-2xl font-bold mb-2">📊 Relatórios</h1>
+        <p className="text-gray-400 text-sm">Acompanhe seu faturamento e lucro real.</p>
       </div>
 
       <div className="px-6 -mt-6 space-y-4">
@@ -65,7 +64,7 @@ export default function Relatorios() {
         {/* HOJE */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
           <h3 className="text-gray-500 font-bold text-sm mb-4 uppercase tracking-wider flex items-center gap-2">
-            <span>📅</span> Vendas de Hoje
+            <span>📅</span> Hoje
           </h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
