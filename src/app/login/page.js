@@ -70,7 +70,12 @@ export default function Login() {
 
         <div className="mt-8 text-center border-t border-gray-100 pt-6">
           <p className="text-xs text-gray-500 mb-2">Ainda não tem uma assinatura?</p>
-          <a href="#" className="text-sm font-bold text-[#009ee3]">
+          <a 
+            href="https://mpago.la/2s5HqNJ" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="text-sm font-bold text-[#009ee3] hover:underline"
+          >
             Assinar agora com Mercado Pago
           </a>
         </div>
