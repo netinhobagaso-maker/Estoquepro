@@ -1,19 +1,15 @@
 import './globals.css';
-import AuthGuard from '../components/AuthGuard';
 
 export const metadata = {
-  title: 'Meu Negócio',
-  manifest: '/manifest.json',
+  title: 'Meu Negócio Pro',
+  description: 'Sistema de Vendas e Estoque na palma da mão',
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="pt-BR">
-      <body className="bg-gray-50">
-        {/* Aqui é onde a mágica acontece. Se não tiver o AuthGuard aqui, o login não aparece! */}
-        <AuthGuard>
-          {children}
-        </AuthGuard>
+      <body className="bg-gray-50 text-gray-900 antialiased">
+        {children}
       </body>
     </html>
   );
