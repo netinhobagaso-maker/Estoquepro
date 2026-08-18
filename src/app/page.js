@@ -12,7 +12,8 @@ export default function Home() {
   useEffect(() => {
     const checkAuth = async () => {
       const { data } = await supabase.auth.getUser();
-      // Se não tem conta logada, manda direto pro Login
+      
+      // Se não tem login, manda para a tela de Login
       if (!data.user) {
         router.push('/login');
       } else {
@@ -22,14 +23,14 @@ export default function Home() {
     checkAuth();
   }, [router]);
 
-  // Tela de carregamento enquanto verifica
+  // Tela de carregamento rápida
   if (!user) return (
-    <div className="min-h-screen bg-[#111827] flex items-center justify-center text-[#009ee3] font-bold">
-      Carregando...
+    <div className="min-h-screen bg-[#111827] flex items-center justify-center text-[#009ee3] font-bold text-xl">
+      Carregando sistema...
     </div>
   );
 
-  // TELA INICIAL LIMPA (Sem travas de pagamento)
+  // TELA INICIAL TOTALMENTE LIBERADA (Sem travas)
   return (
     <div className="min-h-screen bg-gray-50 pb-32">
       <div className="bg-[#111827] pt-12 pb-8 px-6 text-white rounded-b-[2rem] shadow-lg">
