@@ -31,18 +31,18 @@ export default function Login() {
       <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full mx-auto">
         <div className="text-center mb-8">
           <span className="text-5xl mb-4 block">🛒</span>
-          <h1 className="text-2xl font-black text-gray-800">Bem-vindo de volta!</h1>
-          <p className="text-sm text-gray-500 mt-2">Acesse seu sistema de vendas.</p>
+          <h1 className="text-2xl font-black text-gray-800">Área do Cliente</h1>
+          <p className="text-sm text-gray-500 mt-2">Faça login para acessar seu sistema.</p>
         </div>
 
         <form onSubmit={fazerLogin} className="space-y-4">
           <div>
-            <label className="text-sm font-bold text-gray-700 block mb-2">E-mail</label>
+            <label className="text-sm font-bold text-gray-700 block mb-2">E-mail cadastrado</label>
             <input 
               type="email" 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-4 rounded-xl bg-gray-50 border border-gray-200 outline-none focus:border-[#10b981] text-gray-800"
+              className="w-full p-4 rounded-xl bg-gray-50 border border-gray-200 outline-none focus:border-[#009ee3] text-gray-800"
               placeholder="seu@email.com"
               required
             />
@@ -53,7 +53,7 @@ export default function Login() {
               type="password" 
               value={senha}
               onChange={(e) => setSenha(e.target.value)}
-              className="w-full p-4 rounded-xl bg-gray-50 border border-gray-200 outline-none focus:border-[#10b981] text-gray-800"
+              className="w-full p-4 rounded-xl bg-gray-50 border border-gray-200 outline-none focus:border-[#009ee3] text-gray-800"
               placeholder="••••••••"
               required
             />
@@ -62,14 +62,17 @@ export default function Login() {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-[#10b981] text-white p-4 rounded-xl font-black text-lg mt-4 shadow-lg hover:bg-emerald-500 transition-colors"
+            className="w-full bg-[#009ee3] text-white p-4 rounded-xl font-black text-lg mt-4 shadow-lg hover:bg-blue-500 transition-colors"
           >
             {loading ? 'Entrando...' : 'Entrar no Sistema'}
           </button>
         </form>
 
-        <div className="mt-8 text-center">
-          <p className="text-xs text-gray-400">Ainda não tem acesso? Adquira no nosso site oficial.</p>
+        <div className="mt-8 text-center border-t border-gray-100 pt-6">
+          <p className="text-xs text-gray-500 mb-2">Ainda não tem uma assinatura?</p>
+          <a href="#" className="text-sm font-bold text-[#009ee3]">
+            Assinar agora com Mercado Pago
+          </a>
         </div>
       </div>
     </div>
