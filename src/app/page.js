@@ -9,7 +9,7 @@ export default function Home() {
   const [user, setUser] = useState(null);
   const router = useRouter();
 
-  // Estados dos cálculos
+  // Estados
   const [faturamento, setFaturamento] = useState(0);
   const [lucroReal, setLucroReal] = useState(0);
   const [valorEstoque, setValorEstoque] = useState(0);
@@ -24,29 +24,65 @@ export default function Home() {
           router.push('/login');
           return;
         }
-        
         setUser(authData.user);
 
-        // Busca todos os dados sem filtrar colunas para evitar erros de "coluna não encontrada"
-        const { data: produtos } = await supabase.from('produtos').select('*').eq('user_id', authData.user.id);
+        // 1. Busca das Vendas (Já comprovado que funciona)
         const { data: vendas } = await supabase.from('vendas').select('*').eq('user_id', authData.user.id);
 
-        // Função segura para conversão de números
+        // 2. Busca dos Produtos (Com destravamento caso a tabela não tenha user_id)
+        let { data: produtos, error: errProdutos } = await supabase.from('produtos').select('*').eq('user_id', authData.user.id);
+        
+        // Se a busca falhar por causa do user_id, ele tenta buscar tudo
+        if (errProdutos) {
+          const fallback = await supabase.from('produtos').select('*');
+          produtos = fallback.data;
+        }
+
+        // Tradutor avançado de números (Lida com R$, vírgulas, textos e espaços)
         const pegarNumero = (valor) => {
-          const num = Number(valor);
+          if (valor === undefined || valor === null || valor === '') return 0;
+          if (typeof valor === 'number') return valor;
+          let str = String(valor).replace(/R\$/gi, '').replace(/\s/g, '').trim();
+          
+          if (str.includes('.') && str.includes(',')) {
+            str = str.replace(/\./g, '').replace(',', '.'); // Se for 1.200,50 -> 1200.50
+          } else if (str.includes(',')) {
+            str = str.replace(',', '.'); // Se for 10,50 -> 10.50
+          }
+          const num = parseFloat(str);
           return isNaN(num) ? 0 : num;
         };
 
-        // 1. CÁLCULO DE ESTOQUE E LUCRO ESPERADO
+        // ==========================================
+        // CÁLCULO ESTOQUE - CAÇADOR AUTOMÁTICO DE COLUNAS
+        // ==========================================
         if (produtos && produtos.length > 0) {
           let calcValorEstoque = 0;
           let calcLucroEsperado = 0;
 
           produtos.forEach(p => {
-            const qtd = pegarNumero(p.quantidade || p.qtd);
-            const vVenda = pegarNumero(p.preco_venda || p.preco);
-            const vCusto = pegarNumero(p.preco_custo || p.custo);
+            let rawQtd, rawCusto, rawVenda;
 
+            // Varre o banco procurando por qualquer coluna que signifique Quantidade, Custo ou Venda
+            Object.keys(p).forEach(k => {
+              const lower = k.toLowerCase();
+              if (lower === 'quantidade' || lower === 'qtd' || lower === 'estoque' || lower.includes('quant')) {
+                rawQtd = rawQtd ?? p[k];
+              }
+              if (lower === 'preco_custo' || lower === 'custo' || lower.includes('custo') || lower.includes('compra')) {
+                rawCusto = rawCusto ?? p[k];
+              }
+              if (lower === 'preco_venda' || lower === 'preco' || lower === 'valor' || (lower.includes('venda') && !lower.includes('custo'))) {
+                rawVenda = rawVenda ?? p[k];
+              }
+            });
+
+            // Converte os valores encontrados em números exatos
+            const qtd = pegarNumero(rawQtd ?? p.quantidade ?? p.estoque ?? 0);
+            const vCusto = pegarNumero(rawCusto ?? p.preco_custo ?? p.custo ?? 0);
+            const vVenda = pegarNumero(rawVenda ?? p.preco_venda ?? p.preco ?? 0);
+
+            // Matemática Final Exata
             calcValorEstoque += (vCusto * qtd);
             calcLucroEsperado += ((vVenda - vCusto) * qtd);
           });
@@ -55,7 +91,9 @@ export default function Home() {
           setLucroEsperado(calcLucroEsperado);
         }
 
-        // 2. CÁLCULO DE VENDAS E LUCRO REAL (Usando as colunas identificadas nos seus prints)
+        // ==========================================
+        // CÁLCULO VENDAS (Aquele que já deu certo)
+        // ==========================================
         if (vendas && vendas.length > 0) {
           let calcFaturamento = 0;
           let calcLucroReal = 0;
@@ -68,24 +106,21 @@ export default function Home() {
           setFaturamento(calcFaturamento);
           setLucroReal(calcLucroReal);
         }
+
       } catch (error) {
-        console.error("Erro ao carregar os dados:", error);
+        console.error("Erro interno ao calcular:", error);
       }
     };
 
     carregarDados();
   }, [router]);
 
-  // Formatação de moeda segura
   const formatarMoeda = (valor) => {
-    return new Intl.NumberFormat('pt-BR', { 
-      style: 'currency', 
-      currency: 'BRL' 
-    }).format(valor || 0);
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
   };
 
   const zerarVendas = async () => {
-    const confirmar = window.confirm("⚠️ Tem certeza que deseja zerar os relatórios de vendas?\n\nIsso não afetará seus produtos no estoque.");
+    const confirmar = window.confirm("⚠️ Deseja zerar os relatórios de VENDAS?\nSeu estoque ficará intacto.");
     if (!confirmar) return;
 
     if (user) {
@@ -93,9 +128,7 @@ export default function Home() {
       if (!error) {
         setFaturamento(0);
         setLucroReal(0);
-        alert("✅ Relatórios zerados com sucesso!");
-      } else {
-        alert("Erro ao zerar vendas: " + error.message);
+        alert("✅ Vendas zeradas com sucesso!");
       }
     }
   };
@@ -103,7 +136,7 @@ export default function Home() {
   if (!user) {
     return (
       <div className="min-h-screen bg-[#111827] flex items-center justify-center text-[#009ee3] font-bold text-xl">
-        Carregando painel...
+        Calculando os dados...
       </div>
     );
   }
@@ -140,7 +173,7 @@ export default function Home() {
           </div>
         </div>
         
-        {/* BOTÕES DE AÇÃO */}
+        {/* BOTÕES */}
         <div className="grid grid-cols-2 gap-4 mt-6">
           <Link href="/vender" className="bg-[#009ee3] text-white p-4 rounded-2xl shadow-md flex items-center justify-center gap-2 font-bold active:scale-95 transition-transform">
             <span className="text-xl">🛒</span> Vender
@@ -150,7 +183,6 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* BOTÃO DE ZERAR */}
         <button 
           onClick={zerarVendas} 
           className="w-full mt-8 bg-red-50 text-red-600 border border-red-200 p-4 rounded-2xl font-bold flex justify-center items-center gap-2 active:scale-95 transition-transform"
