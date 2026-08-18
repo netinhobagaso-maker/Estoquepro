@@ -30,7 +30,7 @@ export default function Home() {
   }, [router]);
 
   const buscarDados = async (userId) => {
-    // 1. Buscar Produtos (Para calcular Valor em Estoque e Lucro Esperado)
+    // 1. Buscar Produtos e calcular Valor em Estoque e Lucro Esperado automaticamente
     const { data: produtos } = await supabase
       .from('produtos')
       .select('*')
@@ -39,15 +39,31 @@ export default function Home() {
     if (produtos) {
       let estoqueTotal = 0;
       let lucroEsp = 0;
+
       produtos.forEach(p => {
-        estoqueTotal += (Number(p.preco_custo) || 0) * (Number(p.quantidade) || 0);
-        lucroEsp += ((Number(p.preco_venda) || 0) - (Number(p.preco_custo) || 0)) * (Number(p.quantidade) || 0);
+        // Captura flexível de quantidade e preços
+        const qtd = Number(p.quantidade ?? p.qtd ?? p.estoque ?? 0);
+        const precoVenda = Number(p.preco_venda ?? p.preco ?? p.valor ?? 0);
+        const precoCusto = Number(p.preco_custo ?? p.custo ?? 0);
+
+        // Se o custo não foi cadastrado, considera o valor de venda para o total em estoque
+        const valorUnitarioEstoque = precoCusto > 0 ? precoCusto : precoVenda;
+        
+        estoqueTotal += valorUnitarioEstoque * qtd;
+
+        // Se houver preço de custo, calcula a margem exata; senão, estima com base na venda
+        if (precoCusto > 0 && precoVenda > precoCusto) {
+          lucroEsp += (precoVenda - precoCusto) * qtd;
+        } else {
+          lucroEsp += precoVenda * qtd;
+        }
       });
+
       setValorEstoque(estoqueTotal);
       setLucroEsperado(lucroEsp);
     }
 
-    // 2. Buscar Vendas (Para calcular Faturamento e Lucro Real)
+    // 2. Buscar Vendas e calcular Faturamento e Lucro Real
     const { data: vendas } = await supabase
       .from('vendas')
       .select('*')
@@ -56,24 +72,36 @@ export default function Home() {
     if (vendas) {
       let fatTotal = 0;
       let lucroR = 0;
+
       vendas.forEach(v => {
-        fatTotal += Number(v.valor_total) || 0;
-        lucroR += Number(v.lucro) || 0;
+        const valorVenda = Number(v.valor_total ?? v.total ?? v.valor ?? 0);
+        const valorLucro = Number(v.lucro ?? v.lucro_total ?? 0);
+
+        fatTotal += valorVenda;
+        lucroR += valorLucro;
       });
+
       setFaturamento(fatTotal);
       setLucroReal(lucroR);
     }
   };
 
-  const reporBancoDeDados = async () => {
-    const confirmar = window.confirm("⚠️ TEM CERTEZA? Isso vai apagar TODAS as suas vendas e zerar o seu estoque. Essa ação não pode ser desfeita.");
+  // Botão alterado: ZERA APENAS AS VENDAS (Relatórios e Lucro Real), PRESERVANDO O ESTOQUE
+  const zerarHistoricoVendas = async () => {
+    const confirmar = window.confirm(
+      "⚠️ Deseja zerar apenas o histórico de vendas e relatórios?\n\nSeus produtos e o estoque NÃO serão apagados."
+    );
     if (!confirmar) return;
 
     if (user) {
-       await supabase.from('vendas').delete().eq('user_id', user.id);
-       await supabase.from('produtos').delete().eq('user_id', user.id);
-       buscarDados(user.id);
-       alert("✅ Banco de dados resetado com sucesso!");
+      const { error } = await supabase.from('vendas').delete().eq('user_id', user.id);
+
+      if (error) {
+        alert("Erro ao zerar vendas: " + error.message);
+      } else {
+        buscarDados(user.id);
+        alert("✅ Histórico de vendas zerado! Seu estoque continua intacto.");
+      }
     }
   };
 
@@ -83,7 +111,6 @@ export default function Home() {
     </div>
   );
 
-  // Função para formatar os valores em Reais (R$)
   const formatarMoeda = (valor) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
   };
@@ -97,7 +124,7 @@ export default function Home() {
       </div>
       
       <div className="px-6 mt-6 space-y-4">
-        {/* Métricas de Vendas (Realizado) */}
+        {/* Vendas (Realizado) */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100">
             <p className="text-xs text-gray-500 font-bold mb-1">Faturamento Obtido</p>
@@ -109,7 +136,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Métricas de Estoque (Projetado) */}
+        {/* Estoque (Projetado) */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100">
             <p className="text-xs text-gray-500 font-bold mb-1">Valor em Estoque</p>
@@ -121,7 +148,7 @@ export default function Home() {
           </div>
         </div>
         
-        {/* Botões Principais */}
+        {/* Ações Principais */}
         <div className="grid grid-cols-2 gap-4 mt-6">
           <Link href="/vender" className="bg-[#009ee3] text-white p-4 rounded-2xl shadow-md flex items-center justify-center gap-2 font-bold active:scale-95 transition-transform">
             <span className="text-xl">🛒</span> Vender
@@ -131,12 +158,12 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* Botão de Repor Banco de Dados */}
+        {/* Botão de Zerar Relatório/Vendas */}
         <button 
-          onClick={reporBancoDeDados}
+          onClick={zerarHistoricoVendas}
           className="w-full mt-8 bg-red-50 text-red-600 border border-red-200 p-4 rounded-2xl font-bold flex justify-center items-center gap-2 active:scale-95 transition-transform"
         >
-          <span>🗑️</span> Repor Banco de Dados
+          <span>🗑️</span> Zerar Vendas e Relatórios
         </button>
       </div>
       
